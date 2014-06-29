@@ -2,7 +2,7 @@
 header('Access-Control-Allow-Origin: *');
 
 
-
+asdfasdfasdfasdfasdfadfs
 
 $host="localhost"; // Host name 
 $username="spearson_boxplat"; // Mysql username 

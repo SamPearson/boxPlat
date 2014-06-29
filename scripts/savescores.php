@@ -10,24 +10,23 @@ $dblink = mysql_connect($host,$dbu,$dbp);
 $seldb = mysql_select_db($db);
 
 if(isset($_GET['world']) && isset($_GET['level']) && isset($_GET['time']) && isset($_GET['name'])){
-
 	//Lightly sanitize the GET's to prevent SQL injections and possible XSS attacks
 	$world = strip_tags(mysql_real_escape_string($_GET['world']));
 	$level = strip_tags(mysql_real_escape_string($_GET['level']));
 	$time = strip_tags(mysql_real_escape_string($_GET['time']));
 	$name = strip_tags(mysql_real_escape_string($_GET['name']));
 	
-
+	$numScores = mysql_query("SELECT * FROM `scores` WHERE world = $world AND level = $level ");
 	$getLowest = mysql_query("SELECT max( timeInSeconds ) FROM `scores`");
 	if(is_resource($getLowest) and mysql_num_rows($getLowest)>0){
 		$row = mysql_fetch_array($getLowest);
 		$scoreToBeat = $row[0];
 	}
 
-//	if ($time < $scoreToBeat){
+	if ($time < $scoreToBeat or $numScores > 0 and $numScores < 5){
 		$sql = mysql_query("INSERT INTO scores (id, world, level, timeInSeconds, name) VALUES ('', '$world', '$level', '$time', '$name');");
 		$sql = mysql_query("DELETE FROM scores WHERE world = $world AND level = $level ORDER BY timeInSeconds DESC LIMIT 1");
-//	}	
+	}	
 	if($sql){
 	
 		//The query returned true - now do whatever you like here.
