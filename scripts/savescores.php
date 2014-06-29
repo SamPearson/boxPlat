@@ -25,7 +25,8 @@ if(isset($_GET['world']) && isset($_GET['level']) && isset($_GET['time']) && iss
 
 	if ($time < $scoreToBeat or $numScores < 5){
 		$sql = mysql_query("INSERT INTO scores (id, world, level, timeInSeconds, name) VALUES ('', '$world', '$level', '$time', '$name');");
-		$sql = mysql_query("DELETE FROM scores WHERE world = $world AND level = $level ORDER BY timeInSeconds DESC LIMIT 1");
+		if ($numScores >= 5)
+			$sql = mysql_query("DELETE FROM scores WHERE world = $world AND level = $level ORDER BY timeInSeconds DESC LIMIT 1");
 	}	
 	if($sql){
 	
