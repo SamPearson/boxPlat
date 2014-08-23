@@ -505,16 +505,9 @@ if (typeof Object.getPrototypeOf !== "function")
 		index = cr.floor(index);
 		if (index < 0 || index >= arr.length)
 			return;							// index out of bounds
-		if (index === 0)					// removing first item
-			arr.shift();
-		else if (index === arr.length - 1)	// removing last item
-			arr.pop();
-		else
-		{
-			for (i = index, len = arr.length - 1; i < len; i++)
-				arr[i] = arr[i + 1];
-			arr.length = len;
-		}
+		for (i = index, len = arr.length - 1; i < len; i++)
+			arr[i] = arr[i + 1];
+		arr.length = len;
 	};
 	cr.shallowAssignArray = function (dest, src)
 	{
@@ -527,9 +520,19 @@ if (typeof Object.getPrototypeOf !== "function")
 	{
 		a.push.apply(a, b);
 	};
+	cr.fastIndexOf = function (arr, item)
+	{
+		var i, len;
+		for (i = 0, len = arr.length; i < len; ++i)
+		{
+			if (arr[i] === item)
+				return i;
+		}
+		return -1;
+	};
 	cr.arrayFindRemove = function (arr, item)
 	{
-		var index = arr.indexOf(item);
+		var index = cr.fastIndexOf(arr, item);
 		if (index !== -1)
 			cr.arrayRemove(arr, index);
 	};
@@ -717,14 +720,16 @@ if (typeof Object.getPrototypeOf !== "function")
 	};
 	var isChrome = false;
 	var isSafari = false;
+	var isiOS = false;
 	var isEjecta = false;
 	if (typeof window !== "undefined")		// not c2 editor
 	{
 		isChrome = /chrome/i.test(navigator.userAgent) || /chromium/i.test(navigator.userAgent);
 		isSafari = !isChrome && /safari/i.test(navigator.userAgent);
+		isiOS = /(iphone|ipod|ipad)/i.test(navigator.userAgent);
 		isEjecta = window["c2ejecta"];
 	}
-	var supports_set = ((!isSafari && !isEjecta) && (typeof Set !== "undefined" && typeof Set.prototype["forEach"] !== "undefined"));
+	var supports_set = ((!isSafari && !isEjecta && !isiOS) && (typeof Set !== "undefined" && typeof Set.prototype["forEach"] !== "undefined"));
 	function ObjectSet_()
 	{
 		this.s = null;
@@ -1350,7 +1355,7 @@ if (typeof Object.getPrototypeOf !== "function")
 	};
 	cr.round6dp = function (x)
 	{
-		return cr.round(x * 1000000) / 1000000;
+		return Math.round(x * 1000000) / 1000000;
 	};
 	/*
 	var localeCompare_options = {
@@ -1379,6 +1384,19 @@ if (typeof Object.getPrototypeOf !== "function")
 		{
 		*/
 			return a.toLowerCase() === b.toLowerCase();
+	};
+	cr.isCanvasInputEvent = function (e)
+	{
+		var target = e.target;
+		if (!target)
+			return true;
+		if (target === document || target === window)
+			return true;
+		if (document && document.body && target === document.body)
+			return true;
+		if (cr.equals_nocase(target.tagName, "canvas"))
+			return true;
+		return false;
 	};
 }());
 var MatrixArray=typeof Float32Array!=="undefined"?Float32Array:Array,glMatrixArrayType=MatrixArray,vec3={},mat3={},mat4={},quat4={};vec3.create=function(a){var b=new MatrixArray(3);a&&(b[0]=a[0],b[1]=a[1],b[2]=a[2]);return b};vec3.set=function(a,b){b[0]=a[0];b[1]=a[1];b[2]=a[2];return b};vec3.add=function(a,b,c){if(!c||a===c)return a[0]+=b[0],a[1]+=b[1],a[2]+=b[2],a;c[0]=a[0]+b[0];c[1]=a[1]+b[1];c[2]=a[2]+b[2];return c};
@@ -2678,17 +2696,17 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 			});
 		}
 		this.isDomFree = (this.isDirectCanvas || this.isCocoonJs || this.isEjecta);
+		this.isIE = /msie/i.test(navigator.userAgent) || /trident/i.test(navigator.userAgent) || /iemobile/i.test(navigator.userAgent);
 		this.isTizen = /tizen/i.test(navigator.userAgent);
-		this.isAndroid = /android/i.test(navigator.userAgent) && !this.isTizen;		// tizen says "like Android"
-		this.isIE = /msie/i.test(navigator.userAgent) || /trident/i.test(navigator.userAgent);
-		this.isiPhone = /iphone/i.test(navigator.userAgent) || /ipod/i.test(navigator.userAgent);	// treat ipod as an iphone
+		this.isAndroid = /android/i.test(navigator.userAgent) && !this.isTizen && !this.isIE;		// IE mobile and Tizen masquerade as Android
+		this.isiPhone = (/iphone/i.test(navigator.userAgent) || /ipod/i.test(navigator.userAgent)) && !this.isIE;	// treat ipod as an iphone; IE mobile masquerades as iPhone
 		this.isiPad = /ipad/i.test(navigator.userAgent);
 		this.isiOS = this.isiPhone || this.isiPad || this.isEjecta;
 		this.isiPhoneiOS6 = (this.isiPhone && /os\s6/i.test(navigator.userAgent));
 		this.isChrome = /chrome/i.test(navigator.userAgent) || /chromium/i.test(navigator.userAgent);
 		this.isAmazonWebApp = /amazonwebappplatform/i.test(navigator.userAgent);
 		this.isFirefox = /firefox/i.test(navigator.userAgent);
-		this.isSafari = !this.isChrome && /safari/i.test(navigator.userAgent);		// Chrome includes Safari in UA
+		this.isSafari = /safari/i.test(navigator.userAgent) && !this.isChrome && !this.isIE;		// Chrome and IE Mobile masquerade as Safari
 		this.isWindows = /windows/i.test(navigator.userAgent);
 		this.isNodeWebkit = (typeof window["c2nodewebkit"] !== "undefined" || /nodewebkit/i.test(navigator.userAgent));
 		this.isArcade = (typeof window["is_scirra_arcade"] !== "undefined");
@@ -2807,11 +2825,13 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 		this.loadingprogress = 0;
 		this.isNodeFullscreen = false;
 		this.stackLocalCount = 0;	// number of stack-based local vars for recursion
+		this.audioInstance = null;
 		this.halfFramerateMode = false;
 		this.lastRafTime = 0;		// time of last requestAnimationFrame call
 		this.ranLastRaf = false;	// false if last requestAnimationFrame was skipped for half framerate mode
 		this.had_a_click = false;
 		this.isInUserInputEvent = false;
+		this.objects_to_pretick = new cr.ObjectSet();
         this.objects_to_tick = new cr.ObjectSet();
 		this.objects_to_tick2 = new cr.ObjectSet();
 		this.registered_collisions = [];
@@ -3009,11 +3029,30 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 				});
 			}
 		}
+		var unfocusFormControlFunc = function (e) {
+			if (cr.isCanvasInputEvent(e) && document["activeElement"] && document["activeElement"].blur)
+			{
+				document["activeElement"].blur();
+			}
+		}
+		if (window.navigator["pointerEnabled"])
+		{
+			document.addEventListener("pointerdown", unfocusFormControlFunc);
+		}
+		else if (window.navigator["msPointerEnabled"])
+		{
+			document.addEventListener("MSPointerDown", unfocusFormControlFunc);
+		}
+		else
+		{
+			document.addEventListener("touchstart", unfocusFormControlFunc);
+		}
 		if (this.fullscreen_mode === 0 && this.isRetina && this.devicePixelRatio > 1)
 		{
 			this["setSize"](this.original_width, this.original_height, true);
 		}
 		this.tryLockOrientation();
+		this.getready();	// determine things to preload
 		this.go();			// run loading screen
 		this.extra = {};
 		cr.seal(this);
@@ -3037,6 +3076,7 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 			return;			// ignore size events when not fullscreen and not using a fullscreen-in-browser mode
 		if (isfullscreen && this.fullscreen_scaling > 0)
 			mode = this.fullscreen_scaling;
+		var dpr = this.devicePixelRatio;
 		if (mode >= 4)
 		{
 			orig_aspect = this.original_width / this.original_height;
@@ -3046,13 +3086,13 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 				neww = h * orig_aspect;
 				if (mode === 5)	// integer scaling
 				{
-					intscale = neww / this.original_width;
+					intscale = (neww * dpr) / this.original_width;
 					if (intscale > 1)
 						intscale = Math.floor(intscale);
 					else if (intscale < 1)
 						intscale = 1 / Math.ceil(1 / intscale);
-					neww = this.original_width * intscale;
-					newh = this.original_height * intscale;
+					neww = this.original_width * intscale / dpr;
+					newh = this.original_height * intscale / dpr;
 					offx = (w - neww) / 2;
 					offy = (h - newh) / 2;
 					w = neww;
@@ -3069,13 +3109,13 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 				newh = w / orig_aspect;
 				if (mode === 5)	// integer scaling
 				{
-					intscale = newh / this.original_height;
+					intscale = (newh * dpr) / this.original_height;
 					if (intscale > 1)
 						intscale = Math.floor(intscale);
 					else if (intscale < 1)
 						intscale = 1 / Math.ceil(1 / intscale);
-					neww = this.original_width * intscale;
-					newh = this.original_height * intscale;
+					neww = this.original_width * intscale / dpr;
+					newh = this.original_height * intscale / dpr;
 					offx = (w - neww) / 2;
 					offy = (h - newh) / 2;
 					w = neww;
@@ -3092,10 +3132,6 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 				offx = 0;
 				offy = 0;
 			}
-			offx = Math.floor(offx);
-			offy = Math.floor(offy);
-			w = Math.floor(w);
-			h = Math.floor(h);
 		}
 		else if (this.isNodeWebkit && this.isNodeFullscreen && this.fullscreen_mode_set === 0)
 		{
@@ -3105,19 +3141,18 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 			h = this.original_height;
 		}
 		if (mode < 2)
-			this.aspect_scale = this.devicePixelRatio;
-		if (this.isRetina && this.isiPad && this.devicePixelRatio > 1)	// don't apply to iPad 1-2
+			this.aspect_scale = dpr;
+		if (this.isRetina && this.isiPad && dpr > 1)	// don't apply to iPad 1-2
 		{
 			if (w >= 1024)
 				w = 1023;		// 2046 retina pixels
 			if (h >= 1024)
 				h = 1023;
 		}
-		var multiplier = this.devicePixelRatio;
-		this.cssWidth = w;
-		this.cssHeight = h;
-		this.width = Math.round(w * multiplier);
-		this.height = Math.round(h * multiplier);
+		this.cssWidth = Math.round(w);
+		this.cssHeight = Math.round(h);
+		this.width = Math.round(w * dpr);
+		this.height = Math.round(h * dpr);
 		this.redraw = true;
 		if (this.wantFullscreenScalingQuality)
 		{
@@ -3166,48 +3201,48 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 		}
 		if (this.canvasdiv && !this.isDomFree)
 		{
-			jQuery(this.canvasdiv).css({"width": w + "px",
-										"height": h + "px",
-										"margin-left": offx,
-										"margin-top": offy});
+			jQuery(this.canvasdiv).css({"width": Math.round(w) + "px",
+										"height": Math.round(h) + "px",
+										"margin-left": Math.floor(offx) + "px",
+										"margin-top": Math.floor(offy) + "px"});
 			if (typeof cr_is_preview !== "undefined")
 			{
-				jQuery("#borderwrap").css({"width": w + "px",
-											"height": h + "px"});
+				jQuery("#borderwrap").css({"width": Math.round(w) + "px",
+											"height": Math.round(h) + "px"});
 			}
 		}
 		if (this.canvas)
 		{
-			this.canvas.width = Math.round(w * multiplier);
-			this.canvas.height = Math.round(h * multiplier);
+			this.canvas.width = Math.round(w * dpr);
+			this.canvas.height = Math.round(h * dpr);
 			if (this.isEjecta)
 			{
-				this.canvas.style.left = offx + "px";
-				this.canvas.style.top = offy + "px";
-				this.canvas.style.width = w + "px";
-				this.canvas.style.height = h + "px";
+				this.canvas.style.left = Math.floor(offx) + "px";
+				this.canvas.style.top = Math.floor(offy) + "px";
+				this.canvas.style.width = Math.round(w) + "px";
+				this.canvas.style.height = Math.round(h) + "px";
 			}
 			else if (this.isRetina && !this.isDomFree)
 			{
-				jQuery(this.canvas).css({"width": w + "px",
-										"height": h + "px"});
+				jQuery(this.canvas).css({"width": Math.round(w) + "px",
+										"height": Math.round(h) + "px"});
 			}
 		}
 		if (this.overlay_canvas)
 		{
-			this.overlay_canvas.width = w;
-			this.overlay_canvas.height = h;
-			jQuery(this.overlay_canvas).css({"width": w + "px",
-											"height": h + "px"});
+			this.overlay_canvas.width = Math.round(w);
+			this.overlay_canvas.height = Math.round(h);
+			jQuery(this.overlay_canvas).css({"width": Math.round(w) + "px",
+											"height": Math.round(h) + "px"});
 		}
 		if (this.glwrap)
 		{
-			this.glwrap.setSize(Math.round(w * multiplier), Math.round(h * multiplier));
+			this.glwrap.setSize(Math.round(w * dpr), Math.round(h * dpr));
 		}
 		if (this.isDirectCanvas && this.ctx)
 		{
-			this.ctx.width = w;
-			this.ctx.height = h;
+			this.ctx.width = Math.round(w);
+			this.ctx.height = Math.round(h);
 		}
 		if (this.ctx)
 		{
@@ -3313,26 +3348,26 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 		var pm = cr.getProjectModel();
 		this.name = pm[0];
 		this.first_layout = pm[1];
-		this.fullscreen_mode = pm[11];	// 0 = off, 1 = crop, 2 = scale inner, 3 = scale outer, 4 = letterbox scale, 5 = integer letterbox scale
-		this.fullscreen_mode_set = pm[11];
-		this.original_width = pm[9];
-		this.original_height = pm[10];
+		this.fullscreen_mode = pm[12];	// 0 = off, 1 = crop, 2 = scale inner, 3 = scale outer, 4 = letterbox scale, 5 = integer letterbox scale
+		this.fullscreen_mode_set = pm[12];
+		this.original_width = pm[10];
+		this.original_height = pm[11];
 		this.parallax_x_origin = this.original_width / 2;
 		this.parallax_y_origin = this.original_height / 2;
-		if (this.isDomFree && !this.isEjecta && (pm[11] >= 4 || pm[11] === 0))
+		if (this.isDomFree && !this.isEjecta && (pm[12] >= 4 || pm[12] === 0))
 		{
 			cr.logexport("[Construct 2] Letterbox scale fullscreen modes are not supported on this platform - falling back to 'Scale outer'");
 			this.fullscreen_mode = 3;
 			this.fullscreen_mode_set = 3;
 		}
-		this.uses_loader_layout = pm[17];
-		this.loaderstyle = pm[18];
+		this.uses_loader_layout = pm[18];
+		this.loaderstyle = pm[19];
 		if (this.loaderstyle === 0)
 		{
 			this.loaderlogo = new Image();
 			this.loaderlogo.src = "loading-logo.png";
 		}
-		this.next_uid = pm[20];
+		this.next_uid = pm[21];
 		this.system = new cr.system_object(this);
 		var i, len, j, lenj, k, lenk, idstr, m, b, t, f;
 		var plugin, plugin_ctor;
@@ -3526,9 +3561,9 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 				familytype.members.push(familymember);
 			}
 		}
-		for (i = 0, len = pm[24].length; i < len; i++)
+		for (i = 0, len = pm[26].length; i < len; i++)
 		{
-			var containerdata = pm[24][i];
+			var containerdata = pm[26][i];
 			var containertypes = [];
 			for (j = 0, lenj = containerdata.length; j < lenj; j++)
 				containertypes.push(this.types_by_index[containerdata[j]]);
@@ -3592,20 +3627,22 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 		for (i = 0, len = this.triggers_to_postinit.length; i < len; i++)
 			this.triggers_to_postinit[i].postInit();
 		this.triggers_to_postinit.length = 0;
-		this.files_subfolder = pm[7];
-		this.pixel_rounding = pm[8];
+		this.audio_to_preload = pm[7];
+		this.files_subfolder = pm[8];
+		this.pixel_rounding = pm[9];
 		this.aspect_scale = 1.0;
-		this.enableWebGL = pm[12];
-		this.linearSampling = pm[13];
-		this.alphaBackground = pm[14];
-		this.versionstr = pm[15];
-		this.useHighDpi = pm[16];
-		this.orientations = pm[19];		// 0 = any, 1 = portrait, 2 = landscape
+		this.enableWebGL = pm[13];
+		this.linearSampling = pm[14];
+		this.alphaBackground = pm[15];
+		this.versionstr = pm[16];
+		this.useHighDpi = pm[17];
+		this.orientations = pm[20];		// 0 = any, 1 = portrait, 2 = landscape
 		this.autoLockOrientation = (this.orientations > 0);
-		this.pauseOnBlur = pm[21];
-		this.wantFullscreenScalingQuality = pm[22];		// false = low quality, true = high quality
+		this.pauseOnBlur = pm[22];
+		this.wantFullscreenScalingQuality = pm[23];		// false = low quality, true = high quality
 		this.fullscreenScalingQuality = this.wantFullscreenScalingQuality;
-		this.downscalingQuality = pm[23];	// 0 = low (mips off), 1 = medium (mips on, dense spritesheet), 2 = high (mips on, sparse spritesheet)
+		this.downscalingQuality = pm[24];	// 0 = low (mips off), 1 = medium (mips on, dense spritesheet), 2 = high (mips on, sparse spritesheet)
+		this.preloadSounds = pm[25];		// 0 = no, 1 = yes
 		this.start_time = Date.now();
 	};
 	var anyImageHadError = false;
@@ -3630,10 +3667,19 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 		}
 		return null;
 	};
-	Runtime.prototype.areAllTexturesLoaded = function ()
+	var audio_preload_totalsize = 0;
+	var audio_preload_started = false;
+	Runtime.prototype.getready = function ()
 	{
-		var totalsize = 0;
+		if (!this.audioInstance)
+			return;
+		audio_preload_totalsize = this.audioInstance.setPreloadList(this.audio_to_preload);
+	};
+	Runtime.prototype.areAllTexturesAndSoundsLoaded = function ()
+	{
+		var totalsize = audio_preload_totalsize;
 		var completedsize = 0;
+		var audiocompletedsize = 0;
 		var ret = true;
 		var i, len, img;
 		for (i = 0, len = this.wait_for_textures.length; i < len; i++)
@@ -3647,6 +3693,18 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 				completedsize += filesize;
 			else
 				ret = false;    // not all textures loaded
+		}
+		if (ret && this.preloadSounds && this.audioInstance)
+		{
+			if (!audio_preload_started)
+			{
+				this.audioInstance.startPreloads();
+				audio_preload_started = true;
+			}
+			audiocompletedsize = this.audioInstance.getPreloadedSize();
+			completedsize += audiocompletedsize;
+			if (audiocompletedsize < audio_preload_totalsize)
+				ret = false;		// not done yet
 		}
 		if (totalsize == 0)
 			this.progress = 0;
@@ -3663,8 +3721,8 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 			this.positionOverlayCanvas();
 		this.progress = 0;
 		this.last_progress = -1;
-		if (this.areAllTexturesLoaded())
-			this.go_textures_done();
+		if (this.areAllTexturesAndSoundsLoaded())
+			this.go_loading_finished();
 		else
 		{
 			var ms_elapsed = Date.now() - this.start_time;
@@ -3726,7 +3784,7 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 			setTimeout((function (self) { return function () { self.go(); }; })(this), (this.isCocoonJs ? 10 : 100));
 		}
 	};
-	Runtime.prototype.go_textures_done = function ()
+	Runtime.prototype.go_loading_finished = function ()
 	{
 		if (this.overlay_canvas)
 		{
@@ -3865,7 +3923,7 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 		}
 		if (this.isloading)
 		{
-			var done = this.areAllTexturesLoaded();		// updates this.progress
+			var done = this.areAllTexturesAndSoundsLoaded();		// updates this.progress
 			this.loadingprogress = this.progress;
 			if (done)
 			{
@@ -3975,6 +4033,9 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 		this.isInOnDestroy--;
 		this.ClearDeathRow();		// allow instance list changing
 		this.isInOnDestroy++;
+        var tickarr = this.objects_to_pretick.valuesRef();
+        for (i = 0, leni = tickarr.length; i < leni; i++)
+            tickarr[i].pretick();
 		for (i = 0, leni = this.types_by_index.length; i < leni; i++)
 		{
 			type = this.types_by_index[i];
@@ -4005,7 +4066,7 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 				}
 			}
 		}
-        var tickarr = this.objects_to_tick.valuesRef();
+        tickarr = this.objects_to_tick.valuesRef();
         for (i = 0, leni = tickarr.length; i < leni; i++)
             tickarr[i].tick();
 		this.isInOnDestroy--;		// end preventing instance lists from being changed
@@ -4089,6 +4150,14 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 		this.redraw = true;
 		this.layout_first_tick = true;
 		this.ClearDeathRow();
+	};
+	Runtime.prototype.pretickMe = function (inst)
+    {
+        this.objects_to_pretick.add(inst);
+    };
+	Runtime.prototype.unpretickMe = function (inst)
+	{
+		this.objects_to_pretick.remove(inst);
 	};
     Runtime.prototype.tickMe = function (inst)
     {
@@ -4214,6 +4283,7 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 					binst.behavior.my_instances.remove(inst);
 				}
 			}
+			this.objects_to_pretick.remove(inst);
             this.objects_to_tick.remove(inst);
 			this.objects_to_tick2.remove(inst);
 			for (j = 0, lenj = this.system.waits.length; j < lenj; j++)
@@ -6373,7 +6443,8 @@ window["cr_setSuspended"] = function(s)
 					if (num >= this.layers.length)
 						num = this.layers.length - 1;
 					inst.layer = this.layers[num];
-					inst.layer.instances.push(inst);
+					if (inst.layer.instances.indexOf(inst) === -1)
+						inst.layer.instances.push(inst);
 					inst.layer.zindices_stale = true;
 				}
 			}
@@ -9763,6 +9834,8 @@ cr.system_object.prototype.saveToJSON = function ()
 		w = this.waits[i];
 		waitobj = {
 			"t": w.time,
+			"st": w.signaltag,
+			"s": w.signalled,
 			"ev": w.ev.sid,
 			"sm": [],
 			"sols": {}
@@ -9817,6 +9890,8 @@ cr.system_object.prototype.loadFromJSON = function (o)
 		addWait.solModifiers = [];
 		addWait.deleteme = false;
 		addWait.time = w["t"];
+		addWait.signaltag = w["st"] || "";
+		addWait.signalled = !!w["s"];
 		addWait.ev = e;
 		addWait.actindex = aindex;
 		for (j = 0, lenj = w["sm"].length; j < lenj; j++)
@@ -10518,12 +10593,27 @@ cr.system_object.prototype.loadFromJSON = function (o)
 	};
 	sysProto.cnds = new SysCnds();
     function SysActs() {};
-    SysActs.prototype.GoToLayout = function(to)
+    SysActs.prototype.GoToLayout = function (to)
     {
 		if (this.runtime.isloading)
 			return;		// cannot change layout while loading on loader layout
 		if (this.runtime.changelayout)
 			return;		// already changing to a different layout
+;
+        this.runtime.changelayout = to;
+    };
+	SysActs.prototype.NextPrevLayout = function (prev)
+    {
+		if (this.runtime.isloading)
+			return;		// cannot change layout while loading on loader layout
+		if (this.runtime.changelayout)
+			return;		// already changing to a different layout
+		var index = this.runtime.layouts_by_index.indexOf(this.runtime.running_layout);
+		if (prev && index === 0)
+			return;		// cannot go to previous layout from first layout
+		if (!prev && index === this.runtime.layouts_by_index.length - 1)
+			return;		// cannot go to next layout from last layout
+		var to = this.runtime.layouts_by_index[index + (prev ? -1 : 1)];
 ;
         this.runtime.changelayout = to;
     };
@@ -10762,6 +10852,8 @@ cr.system_object.prototype.loadFromJSON = function (o)
 		var evinfo = this.runtime.getCurrentEventStack();
 		var waitobj = allocWaitObject();
 		waitobj.time = this.runtime.kahanTime.sum + seconds;
+		waitobj.signaltag = "";
+		waitobj.signalled = false;
 		waitobj.ev = evinfo.current_event;
 		waitobj.actindex = evinfo.actindex + 1;	// pointing at next action
 		for (i = 0, len = this.runtime.types_by_index.length; i < len; i++)
@@ -10778,6 +10870,44 @@ cr.system_object.prototype.loadFromJSON = function (o)
 		}
 		this.waits.push(waitobj);
 		return true;
+	};
+	SysActs.prototype.WaitForSignal = function (tag)
+	{
+		var i, len, s, t, ss;
+		var evinfo = this.runtime.getCurrentEventStack();
+		var waitobj = allocWaitObject();
+		waitobj.time = -1;
+		waitobj.signaltag = tag.toLowerCase();
+		waitobj.signalled = false;
+		waitobj.ev = evinfo.current_event;
+		waitobj.actindex = evinfo.actindex + 1;	// pointing at next action
+		for (i = 0, len = this.runtime.types_by_index.length; i < len; i++)
+		{
+			t = this.runtime.types_by_index[i];
+			s = t.getCurrentSol();
+			if (s.select_all && evinfo.current_event.solModifiers.indexOf(t) === -1)
+				continue;
+			waitobj.solModifiers.push(t);
+			ss = allocSolStateObject();
+			ss.sa = s.select_all;
+			cr.shallowAssignArray(ss.insts, s.instances);
+			waitobj.sols[i.toString()] = ss;
+		}
+		this.waits.push(waitobj);
+		return true;
+	};
+	SysActs.prototype.Signal = function (tag)
+	{
+		var lowertag = tag.toLowerCase();
+		var i, len, w;
+		for (i = 0, len = this.waits.length; i < len; ++i)
+		{
+			w = this.waits[i];
+			if (w.time !== -1)
+				continue;					// timer wait, ignore
+			if (w.signaltag === lowertag)	// waiting for this signal
+				w.signalled = true;			// will run on next check
+		}
 	};
 	SysActs.prototype.SetLayerScale = function (layer, scale)
     {
@@ -11121,22 +11251,32 @@ cr.system_object.prototype.loadFromJSON = function (o)
     SysExps.prototype.max = function(ret)
     {
 		var max_ = arguments[1];
-		var i, len;
+		if (typeof max_ !== "number")
+			max_ = 0;
+		var i, len, a;
 		for (i = 2, len = arguments.length; i < len; i++)
 		{
-			if (max_ < arguments[i])
-				max_ = arguments[i];
+			a = arguments[i];
+			if (typeof a !== "number")
+				continue;		// ignore non-numeric types
+			if (max_ < a)
+				max_ = a;
 		}
 		ret.set_float(max_);
     };
     SysExps.prototype.min = function(ret)
     {
         var min_ = arguments[1];
-		var i, len;
+		if (typeof min_ !== "number")
+			min_ = 0;
+		var i, len, a;
 		for (i = 2, len = arguments.length; i < len; i++)
 		{
-			if (min_ > arguments[i])
-				min_ = arguments[i];
+			a = arguments[i];
+			if (typeof a !== "number")
+				continue;		// ignore non-numeric types
+			if (min_ > a)
+				min_ = a;
 		}
 		ret.set_float(min_);
     };
@@ -11582,8 +11722,16 @@ cr.system_object.prototype.loadFromJSON = function (o)
 		for (i = 0, len = this.waits.length; i < len; i++)
 		{
 			w = this.waits[i];
-			if (w.time > this.runtime.kahanTime.sum)
-				continue;
+			if (w.time === -1)		// signalled wait
+			{
+				if (!w.signalled)
+					continue;		// not yet signalled
+			}
+			else					// timer wait
+			{
+				if (w.time > this.runtime.kahanTime.sum)
+					continue;		// timer not yet expired
+			}
 			evinfo.current_event = w.ev;
 			evinfo.actindex = w.actindex;
 			evinfo.cndindex = 0;
@@ -12832,10 +12980,13 @@ cr.plugins_.AJAX = function(runtime)
 				request.ontimeout = errorFunc;
 				request.onabort = errorFunc;
 				request["onprogress"] = progressFunc;
+			}
+			request.open(method_, url_);
+			if (!this.runtime.isWindowsPhone8)
+			{
 				if (this.timeout >= 0 && typeof request["timeout"] !== "undefined")
 					request["timeout"] = this.timeout;
 			}
-			request.open(method_, url_);
 			try {
 				request.responseType = "text";
 			} catch (e) {}
@@ -18005,6 +18156,7 @@ cr.behaviors.Platform = function(runtime)
 									};
 		}
 		this.runtime.addDestroyCallback(this.myDestroyCallback);
+		this.inst.extra.isPlatformBehavior = true;
 	};
 	behinstProto.saveToJSON = function ()
 	{
@@ -18229,8 +18381,14 @@ cr.behaviors.Platform = function(runtime)
 		var collobj = this.runtime.testOverlapSolid(this.inst);
 		if (collobj)
 		{
-			if (this.runtime.pushOutSolidNearest(this.inst, Math.max(this.inst.width, this.inst.height) / 2))
+			if (this.inst.extra.inputPredicted)
+			{
+				this.runtime.pushOutSolid(this.inst, -this.downx, -this.downy, 10, false);
+			}
+			else if (this.runtime.pushOutSolidNearest(this.inst, Math.max(this.inst.width, this.inst.height) / 2))
+			{
 				this.runtime.registerCollision(this.inst, collobj);
+			}
 			else
 				return;
 		}
@@ -18424,7 +18582,7 @@ cr.behaviors.Platform = function(runtime)
 					if (!is_jumpthru)
 						this.dx = 0;	// stop
 				}
-				else if (!slope_too_steep && !jump && (Math.abs(this.dy) < Math.abs(this.jumpStrength / 2)))
+				else if (!slope_too_steep && !jump && (Math.abs(this.dy) < Math.abs(this.jumpStrength / 4)))
 				{
 					this.dy = 0;
 					if (!floor_)
@@ -20215,29 +20373,6 @@ cr.getProjectModel = function() { return [
 		6192974330639605,
 		[],
 		[
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null,
-			null
 		]
 	]
 ,	[
@@ -20406,7 +20541,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[0, 0, 0, 2560, 1280, 0, 0, 1, 0, 0, 0, 0, [],
-[80, 40, "142x4,5,79x4,5,78x4,2x5,77x4,2x5,78x4,5,76x4,5,2x4,4x5,72x4,12x5,68x4,5,4,3x5,12,5,2x12,4x5,66x4,5,4,3x5,7x12,3x5,64x4,4x5,2x4,2x12,2x4,6x5,46x4,5,17x4,5,4,5,3x4,2x12,4x4,4x5,18x4,5,22x4,5,2x4,5x5,4,5,15x4,5,3x4,2x12,6x4,2x5,14x4,2x5,4,2x5,22x4,11x5,4,5,16x4,2x12,6x4,5,16x4,5,4,5,27x4,8x5,17x4,2x12,6x4,2x5,13x4,6x5,21x4,14x5,4,4x5,11x4,2x12,7x4,5,13x4,9x5,16x4,5x5,12x12,5,3x12,5,10x4,2x12,22x4,7x5,16x4,3x5,4x12,3x5,4x12,3x5,3x12,5,2x12,5,9x4,2x12,21x4,4x5,12,4x5,14x4,2x5,2x12,7x5,4x12,2x4,6x5,2x12,5,8x4,2x12,22x4,2x5,2x12,4,5,4,5,13x4,2x5,12,6x5,3x4,4x12,5x4,7x5,7x4,2x12,22x4,5,4,2x12,3x4,5,12x4,2x5,2x12,5,8x4,4x12,5x4,3x5,4,5,8x4,5,2x12,2x4,5,21x4,2x12,16x4,5,12,6x5,5x4,4x12,6x4,2x5,4,5,7x4,2x5,2x12,3x5,21x4,2x12,16x4,2x5,3x4,5,4,4x5,2x4,4x12,7x4,5,8x4,5,6x12,5,21x4,2x12,16x4,2x5,6x4,12,5,12,2x5,4x12,15x4,3x5,4,2x12,4,5,12,5,20x4,2x12,17x4,5,4x4,5x5,6x12,6x5,13x4,2x12,2x4,2x5,20x4,2x12,21x4,2x5,3x4,3x5,7x12,5,4,5,2x4,2x5,4,2x5,6x4,2x12,3x4,5,20x4,2x12,3x4,2x5,2x4,2x5,20x4,4x12,5,4,2x5,3x4,5x5,7x4,2x12,3x4,5,20x4,2x12,4x4,7x5,9x4,5,8x4,4x12,2x4,3x5,4,2x5,2x12,5,8x4,2x12,24x4,2x12,4x4,7x5,9x4,5,2x4,2x5,4x4,4x12,3x4,5,4,2x5,4,2x12,5,8x4,2x12,24x4,2x12,2x4,3x5,4,2x12,4,2x5,8x4,5x5,5x4,4x12,3x4,5,4x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,4,2x5,8x4,8x5,2x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,2x4,5,8x4,2x5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,32x4,2x12,144x4"]],
+[80, 40, "142x4,20,79x4,20,78x4,2x20,77x4,2x20,78x4,20,76x4,20,2x4,4x20,72x4,12x20,68x4,20,4,3x20,28,20,2x28,4x20,66x4,20,4,3x20,7x28,3x20,64x4,4x20,2x4,2x28,2x4,6x20,46x4,20,17x4,20,4,20,3x4,2x28,4x4,4x20,18x4,20,22x4,20,2x4,5x20,4,20,15x4,20,3x4,2x28,6x4,2x20,14x4,2x20,4,2x20,22x4,11x20,4,20,16x4,2x28,6x4,20,16x4,20,4,20,27x4,8x20,12x4,20,28,3x20,2x28,6x4,2x20,13x4,6x20,21x4,14x20,4,4x20,7x4,6x28,7x4,20,13x4,2x20,2x28,5x20,16x4,5x20,12x28,20,3x28,20,6x4,4x20,2x28,22x4,7x20,16x4,3x20,4x28,3x20,4x28,3x20,3x28,20,2x28,20,9x4,2x28,21x4,4x20,28,4x20,14x4,2x20,2x28,7x20,4x28,2x4,6x20,2x28,20,8x4,2x28,22x4,2x20,2x28,4,20,4,20,13x4,2x20,28,6x20,3x4,4x28,5x4,7x20,7x4,2x28,22x4,20,4,2x28,3x4,20,12x4,2x20,2x28,20,8x4,4x28,5x4,3x20,4,20,8x4,20,2x28,2x4,20,21x4,2x28,16x4,20,28,6x20,5x4,4x28,6x4,2x20,4,20,7x4,2x20,2x28,3x20,21x4,2x28,16x4,2x20,3x4,20,4,4x20,2x4,4x28,7x4,20,8x4,20,6x28,20,21x4,2x28,20,15x4,2x20,6x4,28,20,28,2x20,4x28,15x4,3x20,4,2x28,4,20,28,20,14x4,3x20,3x4,2x28,20,16x4,20,4x4,5x20,6x28,6x20,13x4,2x28,2x4,2x20,15x4,3x28,2x20,2x28,20,20x4,2x20,3x4,3x20,7x28,20,4,20,2x4,2x20,4,2x20,6x4,2x28,3x4,20,14x4,3x20,5x28,20,2x4,2x20,2x4,2x20,20x4,4x28,20,4,2x20,3x4,5x20,7x4,2x28,3x4,20,17x4,3x20,2x28,4x4,7x20,9x4,20,8x4,4x28,2x4,3x20,4,2x20,2x28,20,8x4,2x28,24x4,2x28,4x4,7x20,9x4,20,2x4,2x20,4x4,4x28,3x4,20,4,2x20,4,2x28,20,8x4,2x28,24x4,2x28,2x4,3x20,4,2x28,4,2x20,4,2x20,5x4,5x20,5x4,4x28,3x4,20,4x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,4,2x20,4,20,28,20,4x4,8x20,2x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,2x4,20,2x4,28,5x4,2x20,4,2x28,4,20,3x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,4x4,20,28,20,5x4,20,4,2x28,4,20,3x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,2x20,4,3x28,20,7x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,6x28,20,9x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,2x20,4,20,10x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,18x4"]],
 				28,
 				46,
 				[
@@ -21199,7 +21334,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[64, 64, 0, 192, 64, 0, 0, 1, 0, 0, 0, 0, [],
-[6, 2, "12x8"]],
+[80, 40, "6x8,74x4,6x8,56x4,5,79x4,5,78x4,2x5,77x4,2x5,78x4,5,76x4,5,2x4,4x5,72x4,12x5,68x4,5,4,3x5,12,5,2x12,4x5,66x4,5,4,3x5,7x12,3x5,64x4,4x5,2x4,2x12,2x4,6x5,46x4,5,17x4,5,4,5,3x4,2x12,4x4,4x5,18x4,5,22x4,5,2x4,5x5,4,5,15x4,5,3x4,2x12,6x4,2x5,14x4,2x5,4,2x5,22x4,11x5,4,5,16x4,2x12,6x4,5,16x4,5,4,5,27x4,8x5,17x4,2x12,6x4,2x5,13x4,6x5,21x4,14x5,4,4x5,11x4,2x12,7x4,5,13x4,9x5,16x4,5x5,12x12,5,3x12,5,10x4,2x12,22x4,7x5,16x4,3x5,4x12,3x5,4x12,3x5,3x12,5,2x12,5,9x4,2x12,21x4,4x5,12,4x5,14x4,2x5,2x12,7x5,4x12,2x4,6x5,2x12,5,8x4,2x12,22x4,2x5,2x12,4,5,4,5,13x4,2x5,12,6x5,3x4,4x12,5x4,7x5,7x4,2x12,22x4,5,4,2x12,3x4,5,12x4,2x5,2x12,5,8x4,4x12,5x4,3x5,4,5,8x4,5,2x12,2x4,5,21x4,2x12,16x4,5,12,6x5,5x4,4x12,6x4,2x5,4,5,7x4,2x5,2x12,3x5,21x4,2x12,16x4,2x5,3x4,5,4,4x5,2x4,4x12,7x4,5,8x4,5,6x12,5,21x4,2x12,16x4,2x5,6x4,12,5,12,2x5,4x12,15x4,3x5,4,2x12,4,5,12,5,20x4,2x12,17x4,5,4x4,5x5,6x12,6x5,13x4,2x12,2x4,2x5,20x4,2x12,21x4,2x5,3x4,3x5,7x12,5,4,5,2x4,2x5,4,2x5,6x4,2x12,3x4,5,20x4,2x12,3x4,2x5,2x4,2x5,20x4,4x12,5,4,2x5,3x4,5x5,7x4,2x12,3x4,5,20x4,2x12,4x4,7x5,9x4,5,8x4,4x12,2x4,3x5,4,2x5,2x12,5,8x4,2x12,24x4,2x12,4x4,7x5,9x4,5,2x4,2x5,4x4,4x12,3x4,5,4,2x5,4,2x12,5,8x4,2x12,24x4,2x12,2x4,3x5,4,2x12,4,2x5,8x4,5x5,5x4,4x12,3x4,5,4x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,4,2x5,8x4,8x5,2x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,2x4,5,8x4,2x5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,32x4,2x12,144x4"]],
 				28,
 				198,
 				[
@@ -21270,7 +21405,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[0, 0, 0, 1280, 1024, 0, 0, 1, 0, 0, 0, 0, [],
-[40, 32, "300x4,5,35x4,5,3x4,2x5,29x4,5,2x4,5,4,2x5,3x4,2x5,27x4,13x5,2x4,5,24x4,5,4,15x5,22x4,4x5,4,12x5,2x4,5,20x4,2x5,4,5,4,17x5,22x4,3x5,4,4x12,9x5,23x4,2x5,2x4,4x12,10x5,21x4,2x5,3x4,4x12,4,2x5,4,6x5,26x4,4x12,4,2x5,2x4,6x5,8x4,2x5,5x4,3x5,7x4,4x12,6x4,5x5,9x4,2x5,4,4x5,9x4,4x12,6x4,4x5,10x4,10x5,6x4,4x12,6x4,3x5,10x4,12x5,5x4,4x12,7x4,2x5,10x4,2x5,4,5,3x12,4,5,2x4,5,5x4,4x12,11x4,5,2x4,4x5,4,5,3x4,3x12,10x4,4x12,10x4,5x5,4,3x5,4x4,3x12,10x4,4x12,12x4,7x5,4x4,3x12,10x4,4x12,11x4,3x5,4,2x12,2x5,4x4,3x12,10x4,4x12,15x4,2x12,4,5,4x4,3x12,10x4,4x12,15x4,2x12,6x4,3x12,10x4,4x12,15x4,2x12,6x4,3x12,10x4,4x12,15x4,2x12,6x4,3x12,10x4,4x12,15x4,2x12,6x4,3x12,10x4,4x12,15x4,2x12,2x4"]],
+[40, 32, "300x4,20,35x4,20,3x4,2x20,29x4,20,2x4,20,4,2x20,3x4,2x20,27x4,13x20,2x4,20,24x4,20,4,15x20,22x4,4x20,4,3x28,9x20,2x4,20,20x4,2x20,4,20,4,2x20,2x28,20,28,11x20,22x4,3x20,4,4x28,20,5x28,3x20,23x4,2x20,2x4,5x28,4x20,2x28,3x20,21x4,2x20,3x4,4x28,4,2x20,4,2x20,2x28,2x20,26x4,4x28,4,2x20,2x4,6x20,8x4,2x20,5x4,3x20,5x4,3x20,3x28,6x4,5x20,9x4,2x20,4,4x20,8x4,2x20,3x28,6x4,4x20,10x4,10x20,6x4,4x28,6x4,3x20,10x4,12x20,5x4,2x28,2x20,7x4,2x20,10x4,2x20,4,20,3x28,4,20,2x4,20,5x4,3x28,3x20,9x4,20,2x4,4x20,4,20,3x4,3x28,10x4,4x28,10x4,5x20,4,3x20,4x4,3x28,10x4,4x28,12x4,7x20,4,20,2x4,3x28,8x4,3x20,3x28,11x4,3x20,4,2x28,2x20,4,20,2x4,2x28,3x20,5x4,2x20,4,4x28,15x4,2x28,4,20,4,2x20,4,3x28,10x4,4x28,15x4,2x28,4x4,3x20,2x28,10x4,4x28,11x4,3x20,4,2x28,6x4,3x28,10x4,4x28,13x4,3x20,28,6x4,3x28,10x4,4x28,15x4,2x28,6x4,3x28,10x4,4x28,15x4,2x28,2x4"]],
 				28,
 				0,
 				[
@@ -21726,7 +21861,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[32, 64, 0, 192, 64, 0, 0, 1, 0, 0, 0, 0, [],
-[6, 2, "12x8"]],
+[80, 40, "6x8,74x4,6x8,56x4,5,79x4,5,78x4,2x5,77x4,2x5,78x4,5,76x4,5,2x4,4x5,72x4,12x5,68x4,5,4,3x5,12,5,2x12,4x5,66x4,5,4,3x5,7x12,3x5,64x4,4x5,2x4,2x12,2x4,6x5,46x4,5,17x4,5,4,5,3x4,2x12,4x4,4x5,18x4,5,22x4,5,2x4,5x5,4,5,15x4,5,3x4,2x12,6x4,2x5,14x4,2x5,4,2x5,22x4,11x5,4,5,16x4,2x12,6x4,5,16x4,5,4,5,27x4,8x5,17x4,2x12,6x4,2x5,13x4,6x5,21x4,14x5,4,4x5,11x4,2x12,7x4,5,13x4,9x5,16x4,5x5,12x12,5,3x12,5,10x4,2x12,22x4,7x5,16x4,3x5,4x12,3x5,4x12,3x5,3x12,5,2x12,5,9x4,2x12,21x4,4x5,12,4x5,14x4,2x5,2x12,7x5,4x12,2x4,6x5,2x12,5,8x4,2x12,22x4,2x5,2x12,4,5,4,5,13x4,2x5,12,6x5,3x4,4x12,5x4,7x5,7x4,2x12,22x4,5,4,2x12,3x4,5,12x4,2x5,2x12,5,8x4,4x12,5x4,3x5,4,5,8x4,5,2x12,2x4,5,21x4,2x12,16x4,5,12,6x5,5x4,4x12,6x4,2x5,4,5,7x4,2x5,2x12,3x5,21x4,2x12,16x4,2x5,3x4,5,4,4x5,2x4,4x12,7x4,5,8x4,5,6x12,5,21x4,2x12,16x4,2x5,6x4,12,5,12,2x5,4x12,15x4,3x5,4,2x12,4,5,12,5,20x4,2x12,17x4,5,4x4,5x5,6x12,6x5,13x4,2x12,2x4,2x5,20x4,2x12,21x4,2x5,3x4,3x5,7x12,5,4,5,2x4,2x5,4,2x5,6x4,2x12,3x4,5,20x4,2x12,3x4,2x5,2x4,2x5,20x4,4x12,5,4,2x5,3x4,5x5,7x4,2x12,3x4,5,20x4,2x12,4x4,7x5,9x4,5,8x4,4x12,2x4,3x5,4,2x5,2x12,5,8x4,2x12,24x4,2x12,4x4,7x5,9x4,5,2x4,2x5,4x4,4x12,3x4,5,4,2x5,4,2x12,5,8x4,2x12,24x4,2x12,2x4,3x5,4,2x12,4,2x5,8x4,5x5,5x4,4x12,3x4,5,4x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,4,2x5,8x4,8x5,2x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,2x4,5,8x4,2x5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,32x4,2x12,144x4"]],
 				28,
 				200,
 				[
@@ -21797,7 +21932,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[0, 0, 0, 2560, 1280, 0, 0, 1, 0, 0, 0, 0, [],
-[80, 40, "142x4,5,79x4,5,78x4,2x5,77x4,2x5,78x4,5,76x4,5,2x4,4x5,72x4,12x5,68x4,5,4,3x5,12,5,2x12,4x5,66x4,5,4,3x5,7x12,3x5,64x4,4x5,2x4,2x12,2x4,6x5,46x4,5,17x4,5,4,5,3x4,2x12,4x4,4x5,18x4,5,22x4,5,2x4,5x5,4,5,15x4,5,3x4,2x12,6x4,2x5,14x4,2x5,4,2x5,22x4,11x5,4,5,16x4,2x12,6x4,5,16x4,5,4,5,27x4,8x5,17x4,2x12,6x4,2x5,13x4,6x5,21x4,14x5,4,4x5,11x4,2x12,7x4,5,13x4,9x5,16x4,5x5,12x12,5,3x12,5,10x4,2x12,22x4,7x5,16x4,3x5,4x12,3x5,4x12,3x5,3x12,5,2x12,5,9x4,2x12,21x4,4x5,12,4x5,14x4,2x5,2x12,7x5,4x12,2x4,6x5,2x12,5,8x4,2x12,22x4,2x5,2x12,4,5,4,5,13x4,2x5,12,6x5,3x4,4x12,5x4,7x5,7x4,2x12,22x4,5,4,2x12,3x4,5,12x4,2x5,2x12,5,8x4,4x12,5x4,3x5,4,5,8x4,5,2x12,2x4,5,21x4,2x12,16x4,5,12,6x5,5x4,4x12,6x4,2x5,4,5,7x4,2x5,2x12,3x5,21x4,2x12,16x4,2x5,3x4,5,4,4x5,2x4,4x12,7x4,5,8x4,5,6x12,5,21x4,2x12,16x4,2x5,6x4,12,5,12,2x5,4x12,15x4,3x5,4,2x12,4,5,12,5,20x4,2x12,17x4,5,4x4,5x5,6x12,6x5,13x4,2x12,2x4,2x5,20x4,2x12,21x4,2x5,3x4,3x5,7x12,5,4,5,2x4,2x5,4,2x5,6x4,2x12,3x4,5,20x4,2x12,3x4,2x5,2x4,2x5,20x4,4x12,5,4,2x5,3x4,5x5,7x4,2x12,3x4,5,20x4,2x12,4x4,7x5,9x4,5,8x4,4x12,2x4,3x5,4,2x5,2x12,5,8x4,2x12,24x4,2x12,4x4,7x5,9x4,5,2x4,2x5,4x4,4x12,3x4,5,4,2x5,4,2x12,5,8x4,2x12,24x4,2x12,2x4,3x5,4,2x12,4,2x5,8x4,5x5,5x4,4x12,3x4,5,4x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,4,2x5,8x4,8x5,2x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,2x4,5,8x4,2x5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,18x4"]],
+[80, 40, "142x4,20,79x4,20,78x4,2x20,77x4,2x20,78x4,20,76x4,20,2x4,4x20,72x4,12x20,68x4,20,4,3x20,28,20,2x28,4x20,66x4,20,4,3x20,7x28,3x20,64x4,4x20,2x4,2x28,2x4,6x20,46x4,20,17x4,20,4,20,3x4,2x28,4x4,4x20,18x4,20,22x4,20,2x4,5x20,4,20,15x4,20,3x4,2x28,6x4,2x20,14x4,2x20,4,2x20,22x4,11x20,4,20,16x4,2x28,6x4,20,16x4,20,4,20,27x4,8x20,17x4,2x28,6x4,2x20,13x4,6x20,21x4,14x20,4,4x20,11x4,2x28,7x4,20,13x4,9x20,16x4,5x20,12x28,20,3x28,20,10x4,2x28,22x4,7x20,16x4,3x20,4x28,3x20,4x28,3x20,3x28,20,2x28,20,9x4,2x28,21x4,4x20,28,4x20,14x4,2x20,2x28,7x20,4x28,2x4,6x20,2x28,20,8x4,2x28,22x4,2x20,2x28,4,20,4,20,13x4,2x20,28,6x20,3x4,4x28,5x4,7x20,7x4,2x28,22x4,20,4,2x28,3x4,20,12x4,2x20,2x28,20,8x4,4x28,5x4,3x20,4,20,8x4,20,2x28,2x4,20,21x4,2x28,16x4,20,28,6x20,5x4,4x28,6x4,2x20,4,20,7x4,2x20,2x28,3x20,21x4,2x28,16x4,2x20,3x4,20,4,4x20,2x4,4x28,7x4,20,8x4,20,6x28,20,21x4,2x28,16x4,2x20,6x4,28,20,28,2x20,4x28,15x4,3x20,4,2x28,4,20,28,20,20x4,2x28,17x4,20,4x4,5x20,6x28,6x20,13x4,2x28,2x4,2x20,20x4,2x28,21x4,2x20,3x4,3x20,7x28,20,4,20,2x4,2x20,4,2x20,6x4,2x28,3x4,20,20x4,2x28,3x4,2x20,2x4,2x20,20x4,4x28,20,4,2x20,3x4,5x20,7x4,2x28,3x4,20,20x4,2x28,4x4,7x20,9x4,20,8x4,4x28,2x4,3x20,4,2x20,2x28,20,8x4,2x28,24x4,2x28,4x4,7x20,9x4,20,2x4,2x20,4x4,4x28,3x4,20,4,2x20,4,2x28,20,8x4,2x28,24x4,2x28,2x4,3x20,4,2x28,4,2x20,8x4,5x20,5x4,4x28,3x4,20,4x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,4,2x20,8x4,8x20,2x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,2x4,20,8x4,2x20,4,2x28,4,20,3x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,12x4,20,4,2x28,4,20,3x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,18x4"]],
 				28,
 				94,
 				[
@@ -22667,7 +22802,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[64, 64, 0, 192, 64, 0, 0, 1, 0, 0, 0, 0, [],
-[6, 2, "12x8"]],
+[80, 40, "6x8,74x4,6x8,56x4,5,79x4,5,78x4,2x5,77x4,2x5,78x4,5,76x4,5,2x4,4x5,72x4,12x5,68x4,5,4,3x5,12,5,2x12,4x5,66x4,5,4,3x5,7x12,3x5,64x4,4x5,2x4,2x12,2x4,6x5,46x4,5,17x4,5,4,5,3x4,2x12,4x4,4x5,18x4,5,22x4,5,2x4,5x5,4,5,15x4,5,3x4,2x12,6x4,2x5,14x4,2x5,4,2x5,22x4,11x5,4,5,16x4,2x12,6x4,5,16x4,5,4,5,27x4,8x5,17x4,2x12,6x4,2x5,13x4,6x5,21x4,14x5,4,4x5,11x4,2x12,7x4,5,13x4,9x5,16x4,5x5,12x12,5,3x12,5,10x4,2x12,22x4,7x5,16x4,3x5,4x12,3x5,4x12,3x5,3x12,5,2x12,5,9x4,2x12,21x4,4x5,12,4x5,14x4,2x5,2x12,7x5,4x12,2x4,6x5,2x12,5,8x4,2x12,22x4,2x5,2x12,4,5,4,5,13x4,2x5,12,6x5,3x4,4x12,5x4,7x5,7x4,2x12,22x4,5,4,2x12,3x4,5,12x4,2x5,2x12,5,8x4,4x12,5x4,3x5,4,5,8x4,5,2x12,2x4,5,21x4,2x12,16x4,5,12,6x5,5x4,4x12,6x4,2x5,4,5,7x4,2x5,2x12,3x5,21x4,2x12,16x4,2x5,3x4,5,4,4x5,2x4,4x12,7x4,5,8x4,5,6x12,5,21x4,2x12,16x4,2x5,6x4,12,5,12,2x5,4x12,15x4,3x5,4,2x12,4,5,12,5,20x4,2x12,17x4,5,4x4,5x5,6x12,6x5,13x4,2x12,2x4,2x5,20x4,2x12,21x4,2x5,3x4,3x5,7x12,5,4,5,2x4,2x5,4,2x5,6x4,2x12,3x4,5,20x4,2x12,3x4,2x5,2x4,2x5,20x4,4x12,5,4,2x5,3x4,5x5,7x4,2x12,3x4,5,20x4,2x12,4x4,7x5,9x4,5,8x4,4x12,2x4,3x5,4,2x5,2x12,5,8x4,2x12,24x4,2x12,4x4,7x5,9x4,5,2x4,2x5,4x4,4x12,3x4,5,4,2x5,4,2x12,5,8x4,2x12,24x4,2x12,2x4,3x5,4,2x12,4,2x5,8x4,5x5,5x4,4x12,3x4,5,4x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,4,2x5,8x4,8x5,2x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,2x4,5,8x4,2x5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,32x4,2x12,144x4"]],
 				28,
 				252,
 				[
@@ -22738,7 +22873,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[0, 0, 0, 2560, 1280, 0, 0, 1, 0, 0, 0, 0, [],
-[80, 40, "142x4,5,79x4,5,78x4,2x5,77x4,2x5,78x4,5,76x4,5,2x4,4x5,72x4,12x5,68x4,5,4,3x5,12,5,2x12,4x5,66x4,5,4,3x5,7x12,3x5,64x4,4x5,2x4,2x12,2x4,6x5,46x4,5,17x4,5,4,5,3x4,2x12,4x4,4x5,18x4,5,22x4,5,2x4,5x5,4,5,15x4,5,3x4,2x12,6x4,2x5,14x4,2x5,4,2x5,22x4,11x5,4,5,16x4,2x12,6x4,5,16x4,5,4,5,27x4,8x5,17x4,2x12,6x4,2x5,13x4,6x5,21x4,14x5,4,4x5,11x4,2x12,7x4,5,13x4,9x5,16x4,5x5,12x12,5,3x12,5,10x4,2x12,22x4,7x5,16x4,3x5,4x12,3x5,4x12,3x5,3x12,5,2x12,5,9x4,2x12,21x4,4x5,12,4x5,14x4,2x5,2x12,7x5,4x12,2x4,6x5,2x12,5,8x4,2x12,22x4,2x5,2x12,4,5,4,5,13x4,2x5,12,6x5,3x4,4x12,5x4,7x5,7x4,2x12,22x4,5,4,2x12,3x4,5,12x4,2x5,2x12,5,8x4,4x12,5x4,3x5,4,5,8x4,5,2x12,2x4,5,21x4,2x12,16x4,5,12,6x5,5x4,4x12,6x4,2x5,4,5,7x4,2x5,2x12,3x5,21x4,2x12,16x4,2x5,3x4,5,4,4x5,2x4,4x12,7x4,5,8x4,5,6x12,5,21x4,2x12,16x4,2x5,6x4,12,5,12,2x5,4x12,15x4,3x5,4,2x12,4,5,12,5,20x4,2x12,17x4,5,4x4,5x5,6x12,6x5,13x4,2x12,2x4,2x5,20x4,2x12,21x4,2x5,3x4,3x5,7x12,5,4,5,2x4,2x5,4,2x5,6x4,2x12,3x4,5,20x4,2x12,3x4,2x5,2x4,2x5,20x4,4x12,5,4,2x5,3x4,5x5,7x4,2x12,3x4,5,20x4,2x12,4x4,7x5,9x4,5,8x4,4x12,2x4,3x5,4,2x5,2x12,5,8x4,2x12,24x4,2x12,4x4,7x5,9x4,5,2x4,2x5,4x4,4x12,3x4,5,4,2x5,4,2x12,5,8x4,2x12,24x4,2x12,2x4,3x5,4,2x12,4,2x5,8x4,5x5,5x4,4x12,3x4,5,4x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,4,2x5,8x4,8x5,2x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,2x4,5,8x4,2x5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,18x4"]],
+[80, 40, "142x4,20,79x4,20,78x4,2x20,77x4,2x20,78x4,20,76x4,20,2x4,4x20,72x4,12x20,68x4,20,4,3x20,28,20,2x28,4x20,66x4,20,4,3x20,7x28,3x20,64x4,4x20,2x4,2x28,2x4,6x20,46x4,20,17x4,20,4,20,3x4,2x28,4x4,4x20,18x4,20,22x4,20,2x4,5x20,4,20,15x4,20,3x4,2x28,6x4,2x20,14x4,2x20,4,2x20,22x4,11x20,4,20,16x4,2x28,6x4,20,16x4,20,4,20,27x4,8x20,17x4,2x28,6x4,2x20,13x4,6x20,4,20,19x4,14x20,4,4x20,11x4,2x28,7x4,20,13x4,9x20,16x4,5x20,12x28,20,3x28,20,10x4,2x28,22x4,7x20,16x4,3x20,4x28,3x20,4x28,3x20,3x28,20,2x28,20,9x4,2x28,21x4,4x20,28,4x20,14x4,2x20,2x28,7x20,4x28,2x4,6x20,2x28,20,8x4,2x28,22x4,2x20,2x28,4,20,4,20,13x4,2x20,28,6x20,3x4,4x28,5x4,7x20,7x4,2x28,22x4,20,4,2x28,3x4,20,12x4,2x20,2x28,20,8x4,4x28,5x4,3x20,4,20,8x4,20,2x28,2x4,20,19x4,20,4,2x28,16x4,20,28,6x20,5x4,4x28,6x4,2x20,4,20,7x4,2x20,2x28,3x20,21x4,2x28,16x4,2x20,3x4,20,4,4x20,2x4,4x28,7x4,20,8x4,20,6x28,20,21x4,2x28,16x4,2x20,6x4,28,20,28,2x20,4x28,15x4,3x20,4,2x28,4,20,28,20,20x4,20,28,17x4,20,4x4,5x20,6x28,6x20,13x4,2x28,2x4,2x20,19x4,20,2x28,21x4,2x20,3x4,3x20,7x28,20,4,20,2x4,2x20,4,2x20,6x4,2x28,3x4,20,20x4,2x28,3x4,2x20,2x4,2x20,13x4,20,6x4,4x28,20,4,2x20,3x4,5x20,7x4,2x28,3x4,20,20x4,2x28,4x4,7x20,9x4,20,8x4,4x28,20,4,3x20,4,2x20,2x28,20,8x4,2x28,24x4,2x28,4x4,7x20,9x4,20,2x4,2x20,4x4,4x28,3x4,20,4,2x20,4,2x28,20,8x4,2x28,24x4,28,20,2x4,3x20,4,2x28,4,2x20,8x4,5x20,5x4,4x28,3x4,20,4x4,2x28,9x4,2x28,24x4,2x28,20,5x4,2x28,4,2x20,8x4,8x20,2x4,4x28,8x4,2x28,9x4,2x28,24x4,28,2x20,5x4,2x28,2x4,20,8x4,2x20,4,2x28,4,20,3x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,20,5x4,2x28,12x4,20,4,2x28,4,20,3x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,20,5x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,18x4"]],
 				28,
 				53,
 				[
@@ -22971,7 +23106,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[64, 64, 0, 192, 64, 0, 0, 1, 0, 0, 0, 0, [],
-[6, 2, "12x8"]],
+[80, 40, "6x8,74x4,6x8,56x4,5,79x4,5,78x4,2x5,77x4,2x5,78x4,5,76x4,5,2x4,4x5,72x4,12x5,68x4,5,4,3x5,12,5,2x12,4x5,66x4,5,4,3x5,7x12,3x5,64x4,4x5,2x4,2x12,2x4,6x5,46x4,5,17x4,5,4,5,3x4,2x12,4x4,4x5,18x4,5,22x4,5,2x4,5x5,4,5,15x4,5,3x4,2x12,6x4,2x5,14x4,2x5,4,2x5,22x4,11x5,4,5,16x4,2x12,6x4,5,16x4,5,4,5,27x4,8x5,17x4,2x12,6x4,2x5,13x4,6x5,21x4,14x5,4,4x5,11x4,2x12,7x4,5,13x4,9x5,16x4,5x5,12x12,5,3x12,5,10x4,2x12,22x4,7x5,16x4,3x5,4x12,3x5,4x12,3x5,3x12,5,2x12,5,9x4,2x12,21x4,4x5,12,4x5,14x4,2x5,2x12,7x5,4x12,2x4,6x5,2x12,5,8x4,2x12,22x4,2x5,2x12,4,5,4,5,13x4,2x5,12,6x5,3x4,4x12,5x4,7x5,7x4,2x12,22x4,5,4,2x12,3x4,5,12x4,2x5,2x12,5,8x4,4x12,5x4,3x5,4,5,8x4,5,2x12,2x4,5,21x4,2x12,16x4,5,12,6x5,5x4,4x12,6x4,2x5,4,5,7x4,2x5,2x12,3x5,21x4,2x12,16x4,2x5,3x4,5,4,4x5,2x4,4x12,7x4,5,8x4,5,6x12,5,21x4,2x12,16x4,2x5,6x4,12,5,12,2x5,4x12,15x4,3x5,4,2x12,4,5,12,5,20x4,2x12,17x4,5,4x4,5x5,6x12,6x5,13x4,2x12,2x4,2x5,20x4,2x12,21x4,2x5,3x4,3x5,7x12,5,4,5,2x4,2x5,4,2x5,6x4,2x12,3x4,5,20x4,2x12,3x4,2x5,2x4,2x5,20x4,4x12,5,4,2x5,3x4,5x5,7x4,2x12,3x4,5,20x4,2x12,4x4,7x5,9x4,5,8x4,4x12,2x4,3x5,4,2x5,2x12,5,8x4,2x12,24x4,2x12,4x4,7x5,9x4,5,2x4,2x5,4x4,4x12,3x4,5,4,2x5,4,2x12,5,8x4,2x12,24x4,2x12,2x4,3x5,4,2x12,4,2x5,8x4,5x5,5x4,4x12,3x4,5,4x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,4,2x5,8x4,8x5,2x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,2x4,5,8x4,2x5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,32x4,2x12,144x4"]],
 				28,
 				322,
 				[
@@ -23042,7 +23177,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[0, 0, 0, 2560, 1280, 0, 0, 1, 0, 0, 0, 0, [],
-[80, 40, "142x4,5,79x4,5,78x4,2x5,77x4,2x5,78x4,5,76x4,5,2x4,4x5,72x4,12x5,68x4,5,4,3x5,12,5,2x12,4x5,66x4,5,4,3x5,7x12,3x5,64x4,4x5,2x4,2x12,2x4,6x5,46x4,5,17x4,5,4,5,3x4,2x12,4x4,4x5,18x4,5,22x4,5,2x4,5x5,4,5,15x4,5,3x4,2x12,6x4,2x5,14x4,2x5,4,2x5,22x4,11x5,4,5,16x4,2x12,6x4,5,16x4,5,4,5,27x4,8x5,17x4,2x12,6x4,2x5,13x4,6x5,21x4,14x5,4,4x5,11x4,2x12,7x4,5,13x4,9x5,16x4,5x5,12x12,5,3x12,5,10x4,2x12,22x4,7x5,16x4,3x5,4x12,3x5,4x12,3x5,3x12,5,2x12,5,9x4,2x12,21x4,4x5,12,4x5,14x4,2x5,2x12,7x5,4x12,2x4,6x5,2x12,5,8x4,2x12,22x4,2x5,2x12,4,5,4,5,13x4,2x5,12,6x5,3x4,4x12,5x4,7x5,7x4,2x12,22x4,5,4,2x12,3x4,5,12x4,2x5,2x12,5,8x4,4x12,5x4,3x5,4,5,8x4,5,2x12,2x4,5,21x4,2x12,16x4,5,12,6x5,5x4,4x12,6x4,2x5,4,5,7x4,2x5,2x12,3x5,21x4,2x12,16x4,2x5,3x4,5,4,4x5,2x4,4x12,7x4,5,8x4,5,6x12,5,21x4,2x12,16x4,2x5,6x4,12,5,12,2x5,4x12,15x4,3x5,4,2x12,4,5,12,5,20x4,2x12,17x4,5,4x4,5x5,6x12,6x5,13x4,2x12,2x4,2x5,20x4,2x12,21x4,2x5,3x4,3x5,7x12,5,4,5,2x4,2x5,4,2x5,6x4,2x12,3x4,5,20x4,2x12,3x4,2x5,2x4,2x5,20x4,4x12,5,4,2x5,3x4,5x5,7x4,2x12,3x4,5,20x4,2x12,4x4,7x5,9x4,5,8x4,4x12,2x4,3x5,4,2x5,2x12,5,8x4,2x12,24x4,2x12,4x4,7x5,9x4,5,2x4,2x5,4x4,4x12,3x4,5,4,2x5,4,2x12,5,8x4,2x12,24x4,2x12,2x4,3x5,4,2x12,4,2x5,8x4,5x5,5x4,4x12,3x4,5,4x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,4,2x5,8x4,8x5,2x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,2x4,5,8x4,2x5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,18x4"]],
+[80, 40, "142x4,20,79x4,20,78x4,2x20,77x4,2x20,78x4,20,76x4,20,2x4,4x20,72x4,12x20,68x4,20,4,3x20,28,20,2x28,4x20,66x4,20,4,3x20,7x28,3x20,64x4,4x20,2x4,2x28,2x4,6x20,46x4,20,17x4,20,4,20,3x4,2x28,4x4,4x20,18x4,20,22x4,20,2x4,5x20,4,20,15x4,20,3x4,2x28,6x4,2x20,14x4,2x20,4,2x20,22x4,11x20,4,20,16x4,2x28,6x4,20,16x4,20,4,20,27x4,8x20,17x4,2x28,6x4,2x20,13x4,6x20,21x4,14x20,4,4x20,11x4,2x28,7x4,20,13x4,9x20,16x4,5x20,3x28,20,8x28,20,3x28,20,10x4,2x28,22x4,7x20,16x4,3x20,4x28,3x20,4x28,3x20,3x28,20,2x28,20,9x4,2x28,21x4,4x20,28,4x20,14x4,2x20,2x28,7x20,4x28,2x4,6x20,2x28,20,8x4,2x28,22x4,2x20,2x28,4,20,4,20,13x4,9x20,3x4,4x28,5x4,7x20,7x4,2x28,22x4,20,4,2x28,3x4,20,12x4,2x20,2x28,20,8x4,4x28,5x4,3x20,4,20,8x4,20,2x28,2x4,20,21x4,2x28,16x4,20,28,6x20,5x4,4x28,6x4,2x20,4,20,7x4,2x20,2x28,3x20,21x4,2x28,16x4,2x20,3x4,20,4,4x20,2x4,4x28,7x4,20,8x4,20,6x28,20,21x4,2x28,16x4,2x20,6x4,28,20,28,2x20,4x28,15x4,3x20,4,2x28,4,20,28,20,20x4,2x28,17x4,20,4x4,5x20,6x28,6x20,13x4,2x28,2x4,2x20,20x4,2x28,21x4,2x20,3x4,3x20,7x28,20,4,20,2x4,2x20,4,2x20,6x4,2x28,3x4,20,20x4,2x28,3x4,2x20,2x4,2x20,20x4,4x28,20,4,2x20,3x4,5x20,7x4,2x28,3x4,20,20x4,2x28,4x4,7x20,9x4,20,8x4,4x28,2x4,3x20,4,2x20,2x28,20,8x4,2x28,24x4,2x28,4x4,7x20,9x4,20,2x4,2x20,4x4,4x28,3x4,20,4,2x20,4,2x28,20,8x4,2x28,24x4,2x28,2x4,3x20,4,2x28,4,2x20,8x4,5x20,5x4,4x28,3x4,20,4x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,4,2x20,8x4,8x20,2x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,2x4,20,8x4,2x20,4,2x28,4,20,3x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,12x4,20,4,2x28,4,20,3x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,18x4"]],
 				28,
 				276,
 				[
@@ -23346,7 +23481,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[0, 0, 0, 2560, 1024, 0, 0, 1, 0, 0, 0, 0, [],
-[80, 32, "109x18,17,15x18,17,72x18,16,2x18,17,16x18,19,2x18,2x19,51x18,16,18,17,75x18,17,4x18,19,22x18,17,2x18,17,45x18,16,2x18,17,2x18,19,17,7x18,17,12x18,16,18,19,18,19,4x18,16,23x18,17,15x18,16,11x18,16,2x18,17,5x18,17,6x18,16,4x18,17,3x18,19,10x18,2x16,9x18,19,2x18,16,13x18,19,12x18,16,18,3x19,20x18,19,23x18,17,19,18,16,2x18,19,10x18,19,11x18,17,18,19,2x18,17,4x18,17,18,16,9x18,16,8x18,19,7x18,16,13x18,19,3x18,2x19,17,6x18,16,18,19,2x18,17,4x18,16,6x18,16,18,2x19,21x18,16,20x18,16,2x18,2x19,18,4x19,9x18,5x19,12x18,2x19,18,17,18,16,14x18,16,18,19,18,19,2x18,16,2x18,16,16x18,2x19,17,2x18,2x19,18,19,6x18,19,18,17,19,7x18,16,7x18,16,18x18,19,2x18,3x19,22x18,19,3x18,19,16,18,19,9x18,19,18,16,10x18,17,18,3x19,15x18,16,18,16,4x18,19,17,19x18,16,2x18,16,18,2x19,2x18,19,6x18,16,18,16,16x18,2x19,18,19,16x18,19,18,19,18,19,22x18,16,2x18,19,12x18,2x19,17,12x18,19,18,2x19,19x18,19,2x18,19,18,19,6x18,16,16x18,19,18,17,18,16,8x18,17,2x19,18,16,34x18,17,2x19,24x18,17,14x18,19,13x18,12,2x19,12x18,16,6x18,16,2x18,19,27x18,16,10x18,16,18,16,11x18,5x19,12,18x18,16,2x18,19,29x18,16,9x18,19,18,17,8x18,3x19,3x12,2x19,16x18,19,18,19,2x18,2x19,17,16,2x18,16,21x18,16,12x18,19,9x18,2x19,5x12,19,12,19x18,3x19,27x18,3x19,9x18,16,9x18,19,6x12,3x19,8x18,16,19,10x18,2x19,16,24x18,2x19,12,3x19,15x18,3x19,8x12,2x19,5x18,16,4x19,7x18,17,18,3x19,23x18,2x19,4x12,3x19,4x18,2x19,2x16,4x18,2x19,11x12,19,2x16,19,2x16,19,3x12,19,12,7x18,3x16,19,12x18,2x19,9x18,19,7x12,3x19,18,19,2x12,19,2x16,2x18,2x19,13x12,19,3x16,19,5x12,2x19,5x18,2x16,2x12,19,12,9x18,3x19,12,8x18,2x19,9x12,16,2x19,3x12,19,16,18,2x19,14x12,2x19,2x16,7x12,3x19,2x18,2x16,3x12,3x19,7x18,19,4x12,4x18,5x19,8x12,3x16,19,4x12,19,2x16,17x12,2x19,16,9x12,3x19,16,6x12,2x19,3x18,16,18,2x19,4x12,2x18,3x19,2x12,2x19,7x12,2x16,2x19,6x12,19,16,18x12,19,2x16,9x12,19,16,8x12,2x19,3x18,2x19,5x12,3x19,4x12,19,8x12,16,19,8x12,19,16,18x12,2x19,16,10x12,16,9x12,19,3x18,19,6x12,19,15x12,16,10x12,16,20x12,16,10x12,16,26x12,68x16,6x12,160x2"]],
+[80, 40, "109x18,17,15x18,17,72x18,16,2x18,17,16x18,19,2x18,2x19,51x18,16,18,17,75x18,17,4x18,19,22x18,17,2x18,17,45x18,16,2x18,17,2x18,19,17,7x18,17,12x18,16,18,19,18,19,4x18,16,23x18,17,15x18,16,11x18,16,2x18,17,5x18,17,6x18,16,4x18,17,3x18,19,10x18,2x16,9x18,19,2x18,16,13x18,19,12x18,16,18,3x19,20x18,19,23x18,17,19,18,16,2x18,19,10x18,19,11x18,17,18,19,2x18,17,4x18,17,18,16,9x18,16,8x18,19,7x18,16,13x18,19,3x18,2x19,17,6x18,16,18,19,2x18,17,4x18,16,6x18,16,18,2x19,21x18,16,20x18,16,2x18,2x19,18,4x19,9x18,5x19,12x18,2x19,18,17,18,16,14x18,16,18,19,18,19,2x18,16,2x18,16,16x18,2x19,17,2x18,2x19,18,19,6x18,19,18,17,19,7x18,16,7x18,16,18x18,19,2x18,3x19,22x18,19,3x18,19,16,18,19,9x18,19,18,16,10x18,17,18,3x19,15x18,16,18,16,4x18,19,17,19x18,16,2x18,16,18,2x19,2x18,19,6x18,16,18,16,16x18,2x19,18,19,16x18,19,18,19,18,19,22x18,16,2x18,19,12x18,2x19,17,12x18,19,18,2x19,19x18,19,2x18,19,18,19,6x18,16,16x18,19,18,17,18,16,8x18,17,2x19,18,16,34x18,17,2x19,24x18,17,14x18,19,13x18,12,2x19,12x18,16,6x18,16,2x18,19,27x18,16,10x18,16,18,16,11x18,5x19,12,18x18,16,2x18,19,29x18,16,9x18,19,18,17,8x18,3x19,3x12,2x19,16x18,19,18,19,2x18,2x19,17,16,2x18,16,21x18,16,12x18,19,9x18,2x19,5x12,19,12,19x18,3x19,27x18,3x19,9x18,16,9x18,19,6x12,3x19,8x18,16,19,10x18,2x19,16,24x18,2x19,12,3x19,15x18,3x19,8x12,2x19,5x18,16,4x19,7x18,17,18,3x19,23x18,2x19,4x12,3x19,4x18,2x19,2x16,4x18,2x19,11x12,19,2x16,19,2x16,19,3x12,19,12,7x18,3x16,19,12x18,2x19,9x18,19,7x12,3x19,18,19,2x12,19,2x16,2x18,2x19,13x12,19,3x16,19,5x12,2x19,5x18,2x16,2x12,19,12,9x18,3x19,12,8x18,2x19,9x12,16,2x19,3x12,19,16,18,2x19,14x12,2x19,2x16,7x12,3x19,2x18,2x16,3x12,3x19,7x18,19,4x12,4x18,5x19,8x12,3x16,19,4x12,19,2x16,17x12,2x19,16,9x12,3x19,16,6x12,2x19,3x18,16,18,2x19,4x12,2x18,3x19,2x12,2x19,7x12,2x16,2x19,6x12,19,16,18x12,19,2x16,9x12,19,16,8x12,2x19,3x18,2x19,5x12,3x19,4x12,19,8x12,16,19,8x12,19,16,18x12,2x19,16,10x12,16,9x12,19,3x18,19,6x12,19,15x12,16,10x12,16,20x12,16,10x12,16,26x12,68x16,6x12,160x2,6x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,32x4,2x12,144x4"]],
 				28,
 				176,
 				[
@@ -23737,7 +23872,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[32, 64, 0, 192, 64, 0, 0, 1, 0, 0, 0, 0, [],
-[6, 2, "12x8"]],
+[80, 40, "6x8,74x4,6x8,56x4,5,79x4,5,78x4,2x5,77x4,2x5,78x4,5,76x4,5,2x4,4x5,72x4,12x5,68x4,5,4,3x5,12,5,2x12,4x5,66x4,5,4,3x5,7x12,3x5,64x4,4x5,2x4,2x12,2x4,6x5,46x4,5,17x4,5,4,5,3x4,2x12,4x4,4x5,18x4,5,22x4,5,2x4,5x5,4,5,15x4,5,3x4,2x12,6x4,2x5,14x4,2x5,4,2x5,22x4,11x5,4,5,16x4,2x12,6x4,5,16x4,5,4,5,27x4,8x5,17x4,2x12,6x4,2x5,13x4,6x5,21x4,14x5,4,4x5,11x4,2x12,7x4,5,13x4,9x5,16x4,5x5,12x12,5,3x12,5,10x4,2x12,22x4,7x5,16x4,3x5,4x12,3x5,4x12,3x5,3x12,5,2x12,5,9x4,2x12,21x4,4x5,12,4x5,14x4,2x5,2x12,7x5,4x12,2x4,6x5,2x12,5,8x4,2x12,22x4,2x5,2x12,4,5,4,5,13x4,2x5,12,6x5,3x4,4x12,5x4,7x5,7x4,2x12,22x4,5,4,2x12,3x4,5,12x4,2x5,2x12,5,8x4,4x12,5x4,3x5,4,5,8x4,5,2x12,2x4,5,21x4,2x12,16x4,5,12,6x5,5x4,4x12,6x4,2x5,4,5,7x4,2x5,2x12,3x5,21x4,2x12,16x4,2x5,3x4,5,4,4x5,2x4,4x12,7x4,5,8x4,5,6x12,5,21x4,2x12,16x4,2x5,6x4,12,5,12,2x5,4x12,15x4,3x5,4,2x12,4,5,12,5,20x4,2x12,17x4,5,4x4,5x5,6x12,6x5,13x4,2x12,2x4,2x5,20x4,2x12,21x4,2x5,3x4,3x5,7x12,5,4,5,2x4,2x5,4,2x5,6x4,2x12,3x4,5,20x4,2x12,3x4,2x5,2x4,2x5,20x4,4x12,5,4,2x5,3x4,5x5,7x4,2x12,3x4,5,20x4,2x12,4x4,7x5,9x4,5,8x4,4x12,2x4,3x5,4,2x5,2x12,5,8x4,2x12,24x4,2x12,4x4,7x5,9x4,5,2x4,2x5,4x4,4x12,3x4,5,4,2x5,4,2x12,5,8x4,2x12,24x4,2x12,2x4,3x5,4,2x12,4,2x5,8x4,5x5,5x4,4x12,3x4,5,4x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,4,2x5,8x4,8x5,2x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,2x4,5,8x4,2x5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,32x4,2x12,144x4"]],
 				28,
 				194,
 				[
@@ -23822,7 +23957,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[0, 0, 0, 2560, 1024, 0, 0, 1, 0, 0, 0, 0, [],
-[80, 32, "153x11,3x15,75x11,8x15,71x11,9x15,63x11,3x15,2x11,15,11,10x15,11,3x15,60x11,16x15,11,4x15,58x11,17x15,11,8x15,22x11,5x15,4x11,6x15,17x11,16x15,2x11,10x15,19x11,18x15,16x11,13x15,4x11,10x15,17x11,22x15,9x11,3x15,4x11,9x15,6x11,10x15,17x11,24x15,5x11,8x15,4x11,5x15,7x11,10x15,17x11,24x15,6x11,9x15,14x11,10x15,10x11,5x15,3x11,5x15,5x11,11x15,8x11,10x15,13x11,9x15,11x11,6x15,3x11,4x15,6x11,8x15,10x11,10x15,13x11,5x15,15x11,7x15,30x11,10x15,14x11,3x15,17x11,8x15,29x11,9x15,36x11,10x15,15x11,3x15,8x11,7x15,32x11,6x15,11,10x15,15x11,2x15,43x11,9x15,2x11,10x15,13x11,5x15,39x11,9x15,5x11,10x15,11x11,6x15,37x11,9x15,7x11,11x15,9x11,9x15,7x11,9x15,18x11,8x15,9x11,11x15,9x11,11x15,2x11,13x15,16x11,9x15,8x11,13x15,9x11,25x15,16x11,9x15,7x11,15x15,8x11,24x15,17x11,8x15,8x11,15x15,9x11,23x15,18x11,7x15,8x11,15x15,11x11,21x15,18x11,7x15,8x11,15x15,13x11,19x15,20x11,5x15,10x11,13x15,15x11,15x15,40x11,10x15,18x11,6x15,256x11"]],
+[80, 40, "153x11,3x15,75x11,8x15,71x11,9x15,63x11,3x15,2x11,15,11,10x15,11,3x15,60x11,16x15,11,4x15,58x11,17x15,11,8x15,22x11,5x15,4x11,6x15,17x11,16x15,2x11,10x15,19x11,18x15,16x11,13x15,4x11,10x15,17x11,22x15,9x11,3x15,4x11,9x15,6x11,10x15,17x11,24x15,5x11,8x15,4x11,5x15,7x11,10x15,17x11,24x15,6x11,9x15,14x11,10x15,10x11,5x15,3x11,5x15,5x11,11x15,8x11,10x15,13x11,9x15,11x11,6x15,3x11,4x15,6x11,8x15,10x11,10x15,13x11,5x15,15x11,7x15,30x11,10x15,14x11,3x15,17x11,8x15,29x11,9x15,36x11,10x15,15x11,3x15,8x11,7x15,32x11,6x15,11,10x15,15x11,2x15,43x11,9x15,2x11,10x15,13x11,5x15,39x11,9x15,5x11,10x15,11x11,6x15,37x11,9x15,7x11,11x15,9x11,9x15,7x11,9x15,18x11,8x15,9x11,11x15,9x11,11x15,2x11,13x15,16x11,9x15,8x11,13x15,9x11,25x15,16x11,9x15,7x11,15x15,8x11,24x15,17x11,8x15,8x11,15x15,9x11,23x15,18x11,7x15,8x11,15x15,11x11,21x15,18x11,7x15,8x11,15x15,13x11,19x15,20x11,5x15,10x11,13x15,15x11,15x15,40x11,10x15,18x11,6x15,256x11,6x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,32x4,2x12,144x4"]],
 				28,
 				56,
 				[
@@ -25739,7 +25874,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[0, 0, 0, 3584, 2560, 0, 0, 1, 0, 0, 0, 0, [],
-[112, 80, "783x114,39,108x114,4x39,105x114,5x39,2x47,101x114,5x39,6x47,99x114,3x39,10x47,96x114,3x39,13x47,93x114,4x39,6x47,2x39,7x47,92x114,39,9x47,2x39,8x47,85x114,8x39,7x47,3x39,9x47,81x114,5x39,9x47,6x39,11x47,80x114,5x39,27x47,80x114,2x39,30x47,80x114,39,31x47,79x114,2x39,31x47,78x114,2x39,32x47,76x114,3x39,33x47,75x114,2x39,35x47,72x114,4x39,36x47,71x114,2x39,39x47,70x114,39,41x47,67x114,3x39,42x47,66x114,2x39,44x47,64x114,3x39,45x47,63x114,2x39,47x47,61x114,2x39,49x47,59x114,3x39,29x47,2x39,19x47,56x114,4x39,30x47,6x39,16x47,54x114,3x39,31x47,3x39,4x47,2x39,15x47,53x114,2x39,32x47,2x39,7x47,39,15x47,52x114,2x39,33x47,39,8x47,2x39,14x47,51x114,2x39,34x47,39,9x47,2x39,13x47,50x114,2x39,34x47,2x39,10x47,2x39,12x47,48x114,2x39,36x47,39,12x47,2x39,11x47,47x114,2x39,36x47,2x39,13x47,2x39,10x47,46x114,2x39,36x47,2x39,15x47,3x39,8x47,45x114,2x39,36x47,2x39,19x47,2x39,6x47,44x114,2x39,36x47,2x39,21x47,2x39,5x47,43x114,2x39,37x47,39,23x47,2x39,4x47,43x114,2x39,36x47,2x39,24x47,2x39,3x47,43x114,39,37x47,39,26x47,2x39,2x47,43x114,39,35x47,3x39,27x47,2x39,47,42x114,39,33x47,4x39,30x47,2x39,42x114,39,33x47,39,34x47,39,42x114,39,33x47,39,35x47,42x114,39,32x47,2x39,35x47,41x114,2x39,16x47,2x39,4x47,39,9x47,39,36x47,41x114,39,4x47,4x39,7x47,10x39,8x47,39,36x47,40x114,2x39,3x47,2x39,2x47,5x39,2x47,2x39,8x47,39,8x47,39,36x47,40x114,39,3x47,2x39,8x47,3x39,9x47,39,7x47,2x39,36x47,2x39,37x114,2x39,2x47,2x39,21x47,2x39,5x47,2x39,38x47,39,37x114,39,2x47,2x39,23x47,39,4x47,2x39,40x47,39,36x114,39,47,2x39,24x47,2x39,2x47,39,42x47,3x39,33x114,4x39,26x47,3x39,45x47,39,33x114,3x39,27x47,3x39,46x47,2x39,31x114,2x39,29x47,39,48x47,2x39,28x114,3x39,31x47,39,48x47,2x39,27x114,39,33x47,2x39,49x47,39,25x114,39,35x47,2x39,49x47,39,24x114,39,36x47,2x39,49x47,2x39,22x114,39,37x47,39,50x47,39,22x114,39,37x47,39,37x47,39,12x47,39,22x114,39,37x47,2x39,35x47,2x39,12x47,39,22x114,39,38x47,39,34x47,39,15x47,2x39,20x114,39,38x47,39,33x47,2x39,16x47,39,19x114,2x39,38x47,39,32x47,2x39,18x47,2x39,15x114,3x39,39x47,39,31x47,2x39,20x47,2x39,12x114,3x39,41x47,2x39,27x47,4x39,23x47,39,10x114,2x39,44x47,39,27x47,39,27x47,39,8x114,2x39,45x47,2x39,25x47,39,28x47,2x39,6x114,39,48x47,39,24x47,2x39,29x47,3x39,3x114,2x39,48x47,39,23x47,2x39,32x47,2x39,114,2x39,49x47,2x39,21x47,2x39,34x47,3x39,51x47,39,20x47,2x39,35x47,2x39,52x47,2x39,18x47,2x39,13x47"]],
+[119, 101, "112x114,7x-1,112x114,7x-1,112x114,7x-1,112x114,7x-1,112x114,7x-1,112x114,7x-1,111x114,39,7x-1,108x114,4x39,7x-1,105x114,5x39,2x47,7x-1,101x114,5x39,6x47,7x-1,99x114,3x39,10x47,7x-1,96x114,3x39,13x47,7x-1,93x114,4x39,6x47,2x39,7x47,7x-1,92x114,39,9x47,2x39,8x47,7x-1,85x114,8x39,7x47,3x39,9x47,7x-1,81x114,5x39,9x47,6x39,11x47,7x-1,80x114,5x39,27x47,7x-1,80x114,2x39,30x47,7x-1,80x114,39,31x47,7x-1,79x114,2x39,31x47,7x-1,78x114,2x39,32x47,7x-1,76x114,3x39,33x47,7x-1,75x114,2x39,35x47,7x-1,72x114,4x39,36x47,7x-1,71x114,2x39,39x47,7x-1,70x114,39,41x47,7x-1,67x114,3x39,42x47,7x-1,66x114,2x39,44x47,7x-1,64x114,3x39,45x47,7x-1,63x114,2x39,47x47,7x-1,61x114,2x39,49x47,7x-1,59x114,3x39,29x47,2x39,19x47,7x-1,56x114,4x39,30x47,6x39,16x47,7x-1,54x114,3x39,31x47,3x39,4x47,2x39,15x47,7x-1,53x114,2x39,32x47,2x39,7x47,39,15x47,7x-1,52x114,2x39,33x47,39,8x47,2x39,14x47,7x-1,51x114,2x39,34x47,39,9x47,2x39,13x47,7x-1,50x114,2x39,34x47,2x39,10x47,2x39,12x47,7x-1,48x114,2x39,36x47,39,12x47,2x39,11x47,7x-1,47x114,2x39,36x47,2x39,13x47,2x39,10x47,7x-1,46x114,2x39,36x47,2x39,15x47,3x39,8x47,7x-1,45x114,2x39,36x47,2x39,19x47,2x39,6x47,7x-1,44x114,2x39,36x47,2x39,21x47,2x39,5x47,7x-1,43x114,2x39,37x47,39,23x47,2x39,4x47,7x-1,43x114,2x39,36x47,2x39,24x47,2x39,3x47,7x-1,43x114,39,37x47,39,26x47,2x39,2x47,7x-1,43x114,39,35x47,3x39,27x47,2x39,47,7x-1,42x114,39,33x47,4x39,30x47,2x39,7x-1,42x114,39,33x47,39,34x47,39,7x-1,42x114,39,33x47,39,35x47,7x-1,42x114,39,32x47,2x39,35x47,7x-1,41x114,2x39,16x47,2x39,4x47,39,9x47,39,36x47,7x-1,41x114,39,4x47,4x39,7x47,10x39,8x47,39,36x47,7x-1,40x114,2x39,3x47,2x39,2x47,5x39,2x47,2x39,8x47,39,8x47,39,36x47,7x-1,40x114,39,3x47,2x39,8x47,3x39,9x47,39,7x47,2x39,36x47,7x-1,2x39,37x114,2x39,2x47,2x39,21x47,2x39,5x47,2x39,37x47,7x-1,47,39,37x114,39,2x47,2x39,23x47,39,4x47,2x39,38x47,7x-1,2x47,39,36x114,39,47,2x39,24x47,2x39,2x47,39,40x47,7x-1,2x47,3x39,33x114,4x39,26x47,3x39,41x47,7x-1,4x47,39,33x114,3x39,27x47,3x39,41x47,7x-1,5x47,2x39,31x114,2x39,29x47,39,42x47,7x-1,6x47,2x39,28x114,3x39,31x47,39,41x47,7x-1,7x47,2x39,27x114,39,33x47,2x39,40x47,7x-1,9x47,39,25x114,39,35x47,2x39,39x47,7x-1,10x47,39,24x114,39,36x47,2x39,38x47,7x-1,11x47,2x39,22x114,39,37x47,39,38x47,7x-1,12x47,39,22x114,39,37x47,39,37x47,39,7x-1,12x47,39,22x114,39,37x47,2x39,35x47,2x39,7x-1,12x47,39,22x114,39,38x47,39,34x47,39,2x47,7x-1,13x47,2x39,20x114,39,38x47,39,33x47,2x39,2x47,7x-1,14x47,39,19x114,2x39,38x47,39,32x47,2x39,3x47,7x-1,15x47,2x39,15x114,3x39,39x47,39,31x47,2x39,4x47,7x-1,16x47,2x39,12x114,3x39,41x47,2x39,27x47,4x39,5x47,7x-1,18x47,39,10x114,2x39,44x47,39,27x47,39,8x47,7x-1,19x47,39,8x114,2x39,45x47,2x39,25x47,39,9x47,7x-1,19x47,2x39,6x114,39,48x47,39,24x47,2x39,9x47,7x-1,20x47,3x39,3x114,2x39,48x47,39,23x47,2x39,10x47,7x-1,22x47,2x39,114,2x39,49x47,2x39,21x47,2x39,11x47,7x-1,23x47,3x39,51x47,39,20x47,2x39,12x47,7x-1,23x47,2x39,52x47,2x39,18x47,2x39,13x47,2506x-1"]],
 				28,
 				19,
 				[
@@ -27483,7 +27618,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[0, 0, 0, 5760, 2560, 0, 0, 1, 0, 0, 0, 0, [],
-[180, 80, "273x60,3x63,174x60,2x63,4x71,4x63,88x60,3x63,57x60,7x63,13x60,2x63,3x71,2x79,5x71,2x63,85x60,63,2x71,63,56x60,63,6x71,5x63,7x60,2x63,3x71,9x79,2x71,84x60,63,3x71,63,55x60,2x63,71,4x79,5x71,3x63,3x60,3x63,2x71,11x79,2x71,83x60,2x63,71,79,71,63,42x60,4x63,9x60,63,2x71,8x79,11x71,12x79,2x71,82x60,63,3x71,79,71,63,20x60,6x63,13x60,3x63,4x71,2x63,6x60,63,2x71,13x79,71,18x79,2x71,30x60,3x63,48x60,3x71,2x79,2x71,63,18x60,2x63,8x71,63,71,2x63,6x60,63,4x71,3x79,3x71,2x63,3x60,63,71,13x79,2x71,17x79,2x71,63,28x60,3x63,71,4x63,45x60,71,4x79,71,2x63,17x60,63,3x71,6x79,5x71,63,4x60,63,2x71,8x79,8x71,32x79,71,63,29x60,63,6x71,63,45x60,2x71,79,63,2x71,63,16x60,2x63,2x71,11x79,3x71,3x63,3x71,10x79,2x71,37x79,71,63,28x60,2x63,71,3x79,71,2x63,8x60,4x63,9x60,9x63,15x60,63,4x71,63,13x60,4x63,3x71,14x79,5x71,31x79,5x71,2x79,3x71,9x79,2x71,63,17x60,7x63,2x60,3x63,2x71,79,3x71,63,8x60,2x63,4x71,2x63,4x71,3x63,7x71,4x63,13x60,5x63,11x60,2x63,5x71,52x79,71,3x63,3x71,2x63,3x71,6x79,2x71,2x63,15x60,2x63,7x71,3x63,3x71,2x79,71,2x63,8x60,63,3x71,2x79,4x71,2x79,5x71,5x79,4x71,2x63,27x60,63,3x71,56x79,71,63,7x60,2x63,8x71,2x63,15x60,2x63,3x71,79,8x71,3x79,2x71,63,8x60,2x63,2x71,22x79,2x71,63,27x60,63,71,58x79,71,63,9x60,8x63,15x60,2x63,3x71,7x79,71,5x79,2x71,63,9x60,4x71,23x79,71,63,27x60,63,71,58x79,71,63,29x60,3x63,3x71,11x79,2x71,79,2x71,2x63,8x60,2x63,2x71,24x79,71,63,27x60,63,71,13x79,4x71,40x79,2x71,63,15x60,15x63,3x71,10x79,7x71,63,10x60,63,2x71,9x79,4x71,11x79,2x71,63,27x60,63,71,12x79,5x71,40x79,71,2x63,14x60,2x63,15x71,4x79,9x71,4x63,13x60,2x71,8x79,3x71,63,2x71,11x79,71,2x63,27x60,2x71,12x79,2x71,2x63,3x71,30x79,2x71,3x79,4x71,63,14x60,2x63,2x71,15x79,4x71,9x63,15x60,63,71,8x79,3x71,2x63,2x71,8x79,4x71,63,28x60,71,13x79,71,5x63,2x71,25x79,2x71,2x79,6x71,3x63,15x60,63,3x71,14x79,2x71,2x63,25x60,63,71,7x79,2x71,3x63,2x71,8x79,2x71,3x63,19x60,2x63,4x71,5x63,71,10x79,3x71,6x63,2x71,23x79,6x71,6x63,17x60,2x63,3x71,10x79,4x71,63,27x60,63,71,7x79,2x71,63,3x71,5x79,5x71,63,22x60,63,2x71,2x79,7x71,10x79,3x71,63,2x60,4x63,7x71,14x79,4x71,6x63,23x60,2x63,6x71,5x79,2x71,3x63,28x60,63,71,8x79,71,5x79,5x71,3x63,24x60,63,71,20x79,3x71,63,5x60,7x63,2x71,12x79,3x71,3x63,31x60,3x63,8x71,2x63,30x60,63,71,13x79,71,63,2x71,2x63,27x60,63,2x71,19x79,3x71,63,12x60,2x63,71,11x79,71,2x63,36x60,9x63,31x60,2x63,71,13x79,2x71,32x60,63,2x71,18x79,3x71,63,13x60,63,2x71,10x79,71,3x63,74x60,63,3x71,14x79,71,32x60,2x63,2x71,17x79,3x71,2x63,12x60,63,2x71,10x79,2x71,2x63,71x60,4x63,71,16x79,71,33x60,2x63,8x71,11x79,71,8x63,7x60,63,71,11x79,2x71,63,70x60,2x63,5x71,16x79,71,35x60,7x63,4x71,8x79,2x71,2x63,4x71,63,7x60,63,71,11x79,71,63,72x60,2x63,3x71,16x79,2x71,42x60,3x63,2x71,8x79,4x71,2x79,71,63,7x60,63,71,11x79,71,63,74x60,2x63,3x71,14x79,71,63,46x60,71,14x79,71,63,6x60,2x63,71,11x79,71,63,20x60,2x63,5x71,4x63,45x60,2x63,3x71,4x79,4x71,3x79,2x71,63,45x60,63,2x71,13x79,71,63,5x60,2x63,2x71,11x79,71,63,16x60,4x63,3x71,3x79,4x71,9x63,39x60,3x63,4x71,3x63,5x71,2x63,42x60,2x63,4x71,13x79,71,63,5x60,63,2x71,11x79,2x71,63,14x60,2x63,2x71,11x79,2x63,79,7x71,8x63,71,2x63,43x60,63,42x60,63,3x71,16x79,71,63,5x60,63,71,12x79,71,63,15x60,63,71,22x79,11x71,2x63,12x60,43,72x60,63,3x71,16x79,71,6x60,63,2x71,11x79,71,63,15x60,2x63,6x71,25x79,3x71,63,12x60,51,73x60,2x63,2x71,15x79,71,7x60,63,3x71,8x79,2x71,63,18x60,4x63,14x71,79,12x71,3x63,88x60,2x63,3x71,10x79,2x71,63,8x60,2x63,71,8x79,71,63,23x60,4x63,2x71,8x63,71,12x63,93x60,2x63,6x71,3x79,4x71,63,9x60,63,8x79,2x71,63,145x60,5x63,5x71,3x63,10x60,2x63,3x71,4x79,71,2x63,151x60,4x63,15x60,2x63,6x71,63,173x60,7x63,76x60,3x63,174x60,4x63,71,5x63,168x60,3x63,9x71,63,6x60,5x63,155x60,63,4x71,7x79,71,8x63,3x71,2x63,40x60,6x63,106x60,2x63,2x71,9x79,2x71,3x63,6x71,79,2x71,3x63,37x60,2x63,71,3x63,107x60,63,3x71,7x79,3x71,2x63,3x71,2x63,2x71,3x79,3x71,2x63,36x60,63,2x71,63,79x60,5x63,24x60,2x63,71,7x79,3x71,10x63,7x71,2x63,34x60,63,4x71,63,74x60,2x63,8x71,3x63,71,2x63,18x60,3x63,8x71,3x63,10x60,7x63,34x60,63,2x71,2x79,71,63,72x60,3x63,71,7x79,6x71,2x63,20x60,9x63,53x60,63,71,3x79,71,63,19x60,2x63,2x71,4x63,41x60,4x63,3x71,13x79,2x71,63,82x60,63,5x71,63,18x60,63,3x71,79,4x71,6x63,3x71,27x60,5x63,12x71,9x79,71,63,83x60,5x63,18x60,63,3x71,5x79,11x71,25x60,63,6x71,2x79,2x71,6x63,71,9x79,71,63,106x60,63,2x71,15x79,2x71,63,24x60,63,71,7x79,71,63,5x60,63,2x71,5x79,4x71,107x60,63,71,17x79,71,63,24x60,63,71,6x79,2x71,7x60,63,2x71,3x79,3x71,2x63,107x60,63,4x71,14x79,71,63,24x60,63,5x71,2x79,71,63,7x60,2x63,6x71,2x63,109x60,3x63,3x71,10x79,2x71,63,25x60,5x63,3x71,2x63,8x60,8x63,3x60,4x63,106x60,2x63,3x71,7x79,2x71,2x63,29x60,5x63,18x60,3x63,3x71,4x63,104x60,2x63,4x71,2x79,3x71,63,54x60,63,3x71,79,6x71,2x63,32x60,6x63,65x60,9x63,55x60,63,71,8x79,4x71,63,26x60,4x63,5x71,5x63,125x60,63,71,11x79,71,2x63,23x60,63,6x71,3x63,3x71,4x63,124x60,63,3x71,10x79,2x71,63,21x60,2x63,4x71,2x63,9x71,3x63,123x60,63,2x71,11x79,71,2x63,19x60,2x63,4x71,2x63,2x71,3x79,6x71,4x63,121x60,2x63,71,11x79,3x71,63,17x60,2x63,4x71,2x63,3x71,7x79,4x71,3x63,122x60,63,3x71,10x79,2x71,63,16x60,63,4x71,2x63,2x71,9x79,6x71,63,25x60,22x63,7x60,4x71,4x63,60x60,3x63,2x71,10x79,3x71,63,14x60,2x63,3x71,63,2x71,13x79,3x71,2x63,23x60,2x63,5x71,3x79,6x71,2x79,4x71,4x63,71,63,2x60,7x71,2x63,61x60,2x63,3x71,10x79,2x71,2x63,13x60,3x63,2x71,63,2x71,15x79,3x63,21x60,2x63,2x71,19x79,6x71,2x63,71,2x63,2x79,4x71,62x60,3x63,71,11x79,2x71,4x63,12x60,2x63,2x71,63,2x71,14x79,71,2x63,19x60,2x63,71,25x79,6x71,6x79,2x71,28x60,2x63,2x71,3x63,29x60,63,2x71,11x79,4x71,2x63,12x60,63,3x71,63,2x71,13x79,2x71,63,18x60,2x63,71,38x79,71,63,25x60,2x63,9x71,8x63,5x60,5x63,5x71,5x63,2x71,15x79,3x71,63,12x60,63,3x71,2x63,2x71,12x79,71,2x63,15x60,2x63,2x71,11x79,3x71,25x79,71,63,22x60,4x63,2x71,7x79,9x71,4x63,7x71,3x79,7x71,17x79,2x71,63,13x60,63,5x71,63,71,11x79,2x71,63,15x60,63,2x71,9x79,2x71,3x63,71,25x79,71,21x60,2x63,5x71,14x79,13x71,29x79,2x71,63,12x60,5x63,2x71,63,71,11x79,3x71,13x60,63,71,10x79,2x71,63,4x71,24x79,2x71,21x60,63,2x71,61x79,71,63,16x60,63,2x71,63,71,10x79,71,63,3x71,63,10x60,63,2x71,27x79,4x71,10x79,71,63,21x60,63,2x71,61x79,2x71,63,16x60,2x63,2x71,10x79,71,63,4x71,63,8x60,2x63,2x71,25x79,3x71,2x63,4x71,7x79,71,63,21x60,2x63,4x71,58x79,2x71,63,15x60,2x63,3x71,10x79,71,63,5x71,63,7x60,2x63,2x71,79,60,21x79,3x71,63,2x60,4x63,3x71,4x79,2x71,63,23x60,3x63,2x71,43x79,6x71,8x79,71,2x63,16x60,63,6x71,6x79,71,63,4x71,63,2x71,63,7x60,2x63,4x71,10x79,11x71,2x63,7x60,3x63,6x71,26x60,2x63,4x71,39x79,2x71,4x63,3x71,5x79,2x71,63,17x60,63,71,4x63,2x71,5x79,71,63,71,2x79,2x71,63,2x71,2x63,6x60,3x63,4x71,79,8x71,11x63,12x60,4x63,29x60,3x63,9x71,4x79,4x71,21x79,3x71,63,3x60,3x63,4x71,79,2x71,63,18x60,63,4x71,2x63,3x71,79,2x71,63,2x71,3x79,6x71,9x60,3x63,3x71,8x63,58x60,8x63,6x71,2x63,5x71,15x79,3x71,63,7x60,4x63,3x71,2x63,18x60,63,5x71,3x63,3x71,63,2x71,7x79,71,63,71,13x60,63,71,82x60,3x63,6x71,8x79,4x71,2x63,12x60,4x63,19x60,2x63,6x71,5x63,71,9x79,2x71,100x60,5x63,3x71,5x79,2x71,3x63,38x60,2x63,12x71,79,2x71,5x79,2x71,105x60,2x63,7x71,63,42x60,3x63,4x71,2x63,2x71,63,11x71"]],
+[181, 80, "180x60,-1,93x60,3x63,84x60,-1,90x60,2x63,4x71,4x63,80x60,-1,8x60,3x63,57x60,7x63,13x60,2x63,3x71,2x79,5x71,2x63,78x60,-1,7x60,63,2x71,63,56x60,63,6x71,5x63,7x60,2x63,3x71,9x79,2x71,78x60,-1,6x60,63,3x71,63,55x60,2x63,71,4x79,5x71,3x63,3x60,3x63,2x71,11x79,2x71,78x60,-1,5x60,2x63,71,79,71,63,42x60,4x63,9x60,63,2x71,8x79,11x71,12x79,2x71,78x60,-1,4x60,63,3x71,79,71,63,20x60,6x63,13x60,3x63,4x71,2x63,6x60,63,2x71,13x79,71,18x79,2x71,30x60,3x63,45x60,-1,3x60,3x71,2x79,2x71,63,18x60,2x63,8x71,63,71,2x63,6x60,63,4x71,3x79,3x71,2x63,3x60,63,71,13x79,2x71,17x79,2x71,63,28x60,3x63,71,4x63,42x60,-1,3x60,71,4x79,71,2x63,17x60,63,3x71,6x79,5x71,63,4x60,63,2x71,8x79,8x71,32x79,71,63,29x60,63,6x71,63,42x60,-1,3x60,2x71,79,63,2x71,63,16x60,2x63,2x71,11x79,3x71,3x63,3x71,10x79,2x71,37x79,71,63,28x60,2x63,71,3x79,71,2x63,8x60,4x63,9x60,9x63,12x60,-1,3x60,63,4x71,63,13x60,4x63,3x71,14x79,5x71,31x79,5x71,2x79,3x71,9x79,2x71,63,17x60,7x63,2x60,3x63,2x71,79,3x71,63,8x60,2x63,4x71,2x63,4x71,3x63,7x71,4x63,9x60,-1,4x60,5x63,11x60,2x63,5x71,52x79,71,3x63,3x71,2x63,3x71,6x79,2x71,2x63,15x60,2x63,7x71,3x63,3x71,2x79,71,2x63,8x60,63,3x71,2x79,4x71,2x79,5x71,5x79,4x71,2x63,8x60,-1,19x60,63,3x71,56x79,71,63,7x60,2x63,8x71,2x63,15x60,2x63,3x71,79,8x71,3x79,2x71,63,8x60,2x63,2x71,22x79,2x71,63,8x60,-1,19x60,63,71,58x79,71,63,9x60,8x63,15x60,2x63,3x71,7x79,71,5x79,2x71,63,9x60,4x71,23x79,71,63,8x60,-1,19x60,63,71,58x79,71,63,29x60,3x63,3x71,11x79,2x71,79,2x71,2x63,8x60,2x63,2x71,24x79,71,63,8x60,-1,19x60,63,71,13x79,4x71,40x79,2x71,63,15x60,15x63,3x71,10x79,7x71,63,10x60,63,2x71,9x79,4x71,11x79,2x71,63,8x60,-1,19x60,63,71,12x79,5x71,40x79,71,2x63,14x60,2x63,15x71,4x79,9x71,4x63,13x60,2x71,8x79,3x71,63,2x71,11x79,71,2x63,8x60,-1,19x60,2x71,12x79,2x71,2x63,3x71,30x79,2x71,3x79,4x71,63,14x60,2x63,2x71,15x79,4x71,9x63,15x60,63,71,8x79,3x71,2x63,2x71,8x79,4x71,63,9x60,-1,19x60,71,13x79,71,5x63,2x71,25x79,2x71,2x79,6x71,3x63,15x60,63,3x71,14x79,2x71,2x63,25x60,63,71,7x79,2x71,3x63,2x71,8x79,2x71,3x63,10x60,-1,9x60,2x63,4x71,5x63,71,10x79,3x71,6x63,2x71,23x79,6x71,6x63,17x60,2x63,3x71,10x79,4x71,63,27x60,63,71,7x79,2x71,63,3x71,5x79,5x71,63,13x60,-1,9x60,63,2x71,2x79,7x71,10x79,3x71,63,2x60,4x63,7x71,14x79,4x71,6x63,23x60,2x63,6x71,5x79,2x71,3x63,28x60,63,71,8x79,71,5x79,5x71,3x63,15x60,-1,9x60,63,71,20x79,3x71,63,5x60,7x63,2x71,12x79,3x71,3x63,31x60,3x63,8x71,2x63,30x60,63,71,13x79,71,63,2x71,2x63,18x60,-1,9x60,63,2x71,19x79,3x71,63,12x60,2x63,71,11x79,71,2x63,36x60,9x63,31x60,2x63,71,13x79,2x71,22x60,-1,10x60,63,2x71,18x79,3x71,63,13x60,63,2x71,10x79,71,3x63,74x60,63,3x71,14x79,71,22x60,-1,10x60,2x63,2x71,17x79,3x71,2x63,12x60,63,2x71,10x79,2x71,2x63,71x60,4x63,71,16x79,71,22x60,-1,11x60,2x63,8x71,11x79,71,8x63,7x60,63,71,11x79,2x71,63,70x60,2x63,5x71,16x79,71,22x60,-1,13x60,7x63,4x71,8x79,2x71,2x63,4x71,63,7x60,63,71,11x79,71,63,72x60,2x63,3x71,16x79,2x71,22x60,-1,20x60,3x63,2x71,8x79,4x71,2x79,71,63,7x60,63,71,11x79,71,63,74x60,2x63,3x71,14x79,71,63,22x60,-1,24x60,71,14x79,71,63,6x60,2x63,71,11x79,71,63,20x60,2x63,5x71,4x63,45x60,2x63,3x71,4x79,4x71,3x79,2x71,63,22x60,-1,23x60,63,2x71,13x79,71,63,5x60,2x63,2x71,11x79,71,63,16x60,4x63,3x71,3x79,4x71,9x63,39x60,3x63,4x71,3x63,5x71,2x63,22x60,-1,20x60,2x63,4x71,13x79,71,63,5x60,63,2x71,11x79,2x71,63,14x60,2x63,2x71,11x79,2x63,79,7x71,8x63,71,2x63,43x60,63,23x60,-1,19x60,63,3x71,16x79,71,63,5x60,63,71,12x79,71,63,15x60,63,71,22x79,11x71,2x63,12x60,43,53x60,-1,19x60,63,3x71,16x79,71,6x60,63,2x71,11x79,71,63,15x60,2x63,6x71,25x79,3x71,63,12x60,51,53x60,-1,20x60,2x63,2x71,15x79,71,7x60,63,3x71,8x79,2x71,63,18x60,4x63,14x71,79,12x71,3x63,66x60,-1,22x60,2x63,3x71,10x79,2x71,63,8x60,2x63,71,8x79,71,63,23x60,4x63,2x71,8x63,71,12x63,69x60,-1,24x60,2x63,6x71,3x79,4x71,63,9x60,63,8x79,2x71,63,119x60,-1,26x60,5x63,5x71,3x63,10x60,2x63,3x71,4x79,71,2x63,119x60,-1,32x60,4x63,15x60,2x63,6x71,63,120x60,-1,53x60,7x63,76x60,3x63,41x60,-1,133x60,4x63,71,5x63,37x60,-1,131x60,3x63,9x71,63,6x60,5x63,25x60,-1,130x60,63,4x71,7x79,71,8x63,3x71,2x63,24x60,-1,16x60,6x63,106x60,2x63,2x71,9x79,2x71,3x63,6x71,79,2x71,3x63,22x60,-1,15x60,2x63,71,3x63,107x60,63,3x71,7x79,3x71,2x63,3x71,2x63,2x71,3x79,3x71,2x63,21x60,-1,15x60,63,2x71,63,79x60,5x63,24x60,2x63,71,7x79,3x71,10x63,7x71,2x63,21x60,-1,13x60,63,4x71,63,74x60,2x63,8x71,3x63,71,2x63,18x60,3x63,8x71,3x63,10x60,7x63,22x60,-1,12x60,63,2x71,2x79,71,63,72x60,3x63,71,7x79,6x71,2x63,20x60,9x63,41x60,-1,12x60,63,71,3x79,71,63,19x60,2x63,2x71,4x63,41x60,4x63,3x71,13x79,2x71,63,70x60,-1,12x60,63,5x71,63,18x60,63,3x71,79,4x71,6x63,3x71,27x60,5x63,12x71,9x79,71,63,70x60,-1,13x60,5x63,18x60,63,3x71,5x79,11x71,25x60,63,6x71,2x79,2x71,6x63,71,9x79,71,63,70x60,-1,36x60,63,2x71,15x79,2x71,63,24x60,63,71,7x79,71,63,5x60,63,2x71,5x79,4x71,71x60,-1,36x60,63,71,17x79,71,63,24x60,63,71,6x79,2x71,7x60,63,2x71,3x79,3x71,2x63,71x60,-1,36x60,63,4x71,14x79,71,63,24x60,63,5x71,2x79,71,63,7x60,2x63,6x71,2x63,72x60,-1,37x60,3x63,3x71,10x79,2x71,63,25x60,5x63,3x71,2x63,8x60,8x63,3x60,4x63,66x60,-1,40x60,2x63,3x71,7x79,2x71,2x63,29x60,5x63,18x60,3x63,3x71,4x63,62x60,-1,42x60,2x63,4x71,2x79,3x71,63,54x60,63,3x71,79,6x71,2x63,32x60,6x63,21x60,-1,44x60,9x63,55x60,63,71,8x79,4x71,63,26x60,4x63,5x71,5x63,17x60,-1,108x60,63,71,11x79,71,2x63,23x60,63,6x71,3x63,3x71,4x63,16x60,-1,108x60,63,3x71,10x79,2x71,63,21x60,2x63,4x71,2x63,9x71,3x63,14x60,-1,109x60,63,2x71,11x79,71,2x63,19x60,2x63,4x71,2x63,2x71,3x79,6x71,4x63,12x60,-1,109x60,2x63,71,11x79,3x71,63,17x60,2x63,4x71,2x63,3x71,7x79,4x71,3x63,11x60,-1,111x60,63,3x71,10x79,2x71,63,16x60,63,4x71,2x63,2x71,9x79,6x71,63,11x60,-1,14x60,22x63,7x60,4x71,4x63,60x60,3x63,2x71,10x79,3x71,63,14x60,2x63,3x71,63,2x71,13x79,3x71,2x63,10x60,-1,13x60,2x63,5x71,3x79,6x71,2x79,4x71,4x63,71,63,2x60,7x71,2x63,61x60,2x63,3x71,10x79,2x71,2x63,13x60,3x63,2x71,63,2x71,15x79,3x63,9x60,-1,12x60,2x63,2x71,19x79,6x71,2x63,71,2x63,2x79,4x71,62x60,3x63,71,11x79,2x71,4x63,12x60,2x63,2x71,63,2x71,14x79,71,2x63,9x60,-1,10x60,2x63,71,25x79,6x71,6x79,2x71,28x60,2x63,2x71,3x63,29x60,63,2x71,11x79,4x71,2x63,12x60,63,3x71,63,2x71,13x79,2x71,63,9x60,-1,9x60,2x63,71,38x79,71,63,25x60,2x63,9x71,8x63,5x60,5x63,5x71,5x63,2x71,15x79,3x71,63,12x60,63,3x71,2x63,2x71,12x79,71,2x63,8x60,-1,7x60,2x63,2x71,11x79,3x71,25x79,71,63,22x60,4x63,2x71,7x79,9x71,4x63,7x71,3x79,7x71,17x79,2x71,63,13x60,63,5x71,63,71,11x79,2x71,63,8x60,-1,7x60,63,2x71,9x79,2x71,3x63,71,25x79,71,21x60,2x63,5x71,14x79,13x71,29x79,2x71,63,12x60,5x63,2x71,63,71,11x79,3x71,7x60,-1,6x60,63,71,10x79,2x71,63,4x71,24x79,2x71,21x60,63,2x71,61x79,71,63,16x60,63,2x71,63,71,10x79,71,63,3x71,63,5x60,-1,5x60,63,2x71,27x79,4x71,10x79,71,63,21x60,63,2x71,61x79,2x71,63,16x60,2x63,2x71,10x79,71,63,4x71,63,4x60,-1,4x60,2x63,2x71,25x79,3x71,2x63,4x71,7x79,71,63,21x60,2x63,4x71,58x79,2x71,63,15x60,2x63,3x71,10x79,71,63,5x71,63,3x60,-1,4x60,2x63,2x71,79,60,21x79,3x71,63,2x60,4x63,3x71,4x79,2x71,63,23x60,3x63,2x71,43x79,6x71,8x79,71,2x63,16x60,63,6x71,6x79,71,63,4x71,63,2x71,63,2x60,-1,5x60,2x63,4x71,10x79,11x71,2x63,7x60,3x63,6x71,26x60,2x63,4x71,39x79,2x71,4x63,3x71,5x79,2x71,63,17x60,63,71,4x63,2x71,5x79,71,63,71,2x79,2x71,63,2x71,2x63,-1,6x60,3x63,4x71,79,8x71,11x63,12x60,4x63,29x60,3x63,9x71,4x79,4x71,21x79,3x71,63,3x60,3x63,4x71,79,2x71,63,18x60,63,4x71,2x63,3x71,79,2x71,63,2x71,3x79,6x71,-1,9x60,3x63,3x71,8x63,58x60,8x63,6x71,2x63,5x71,15x79,3x71,63,7x60,4x63,3x71,2x63,18x60,63,5x71,3x63,3x71,63,2x71,7x79,71,63,71,-1,13x60,63,71,82x60,3x63,6x71,8x79,4x71,2x63,12x60,4x63,19x60,2x63,6x71,5x63,71,9x79,2x71,-1,100x60,5x63,3x71,5x79,2x71,3x63,38x60,2x63,12x71,79,2x71,5x79,2x71,-1,105x60,2x63,7x71,63,42x60,3x63,4x71,2x63,2x71,63,11x71,-1"]],
 				28,
 				314,
 				[
@@ -28494,7 +28629,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[0, 0, 0, 6400, 3200, 0, 0, 1, 0, 0, 0, 0, [],
-[200, 100, "20000x68"]],
+[2000, 2000, "200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,3601800x-1"]],
 				28,
 				204,
 				[
@@ -37210,6 +37345,8 @@ false,false,8350547247626701,false
 		]
 	]
 	],
+	[
+	],
 	"media/",
 	true,
 	640,
@@ -37227,6 +37364,7 @@ false,false,8350547247626701,false
 	false,
 	true,
 	1,
+	true,
 	[
 	]
 ];};
