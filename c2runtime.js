@@ -20862,6 +20862,23 @@ cr.getProjectModel = function() { return [
 	]
 ,	[
 		"t39",
+		cr.plugins_.Text,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		8270132118646419,
+		[],
+		null
+	]
+,	[
+		"t40",
 		cr.plugins_.Sprite,
 		true,
 		[5530504444911859,5103997696542789,5505081948213201,6800288658749061,2806796760717673],
@@ -20879,7 +20896,7 @@ cr.getProjectModel = function() { return [
 	]
 	],
 	[
-		[39,27,22]
+		[40,27,22]
 	],
 	[
 	[
@@ -34479,6 +34496,26 @@ cr.getProjectModel = function() { return [
 					1
 				]
 			]
+,			[
+				[509, 86, 0, 200, 30, 0, 0, 1, 0, 0, 0, 0, []],
+				39,
+				716,
+				[
+				],
+				[
+				],
+				[
+					"Text",
+					0,
+					"8pt Arial",
+					"rgb(0,0,0)",
+					0,
+					0,
+					0,
+					0,
+					0
+				]
+			]
 			],
 			[			]
 		]
@@ -35927,7 +35964,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetOpacity,
 						null,
 						5564864266790713,
@@ -35943,7 +35980,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						5198859656528597,
@@ -35963,7 +36000,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						8532798613848453,
@@ -35983,7 +36020,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						4205817132125938,
@@ -36003,7 +36040,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						3160025465695836,
@@ -36023,7 +36060,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						6656596310885233,
@@ -36082,7 +36119,7 @@ false,false,8213204831356256,false
 					,[
 					[
 						4,
-						39
+						40
 					]
 ,					[
 						5,
@@ -36128,7 +36165,7 @@ false,false,8213204831356256,false
 					]
 				]
 ,				[
-					39,
+					40,
 					cr.plugins_.Sprite.prototype.acts.SetOpacity,
 					null,
 					8575939758087167,
@@ -36231,7 +36268,7 @@ false,false,8213204831356256,false
 					],
 					[
 					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						8850952143266159,
@@ -36251,7 +36288,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						2449189630381566,
@@ -36271,7 +36308,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						7615900476255838,
@@ -36291,7 +36328,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						1585046118546129,
@@ -36311,7 +36348,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						8803089128721156,
@@ -36386,7 +36423,7 @@ false,false,8213204831356256,false
 					],
 					[
 					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						9379124048018728,
@@ -36406,7 +36443,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						2258215698418098,
@@ -36426,7 +36463,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						2126768684919626,
@@ -36446,7 +36483,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						9454293588143391,
@@ -36466,7 +36503,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						5903680165802399,
@@ -36541,7 +36578,7 @@ false,false,8213204831356256,false
 					],
 					[
 					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						9765030060709217,
@@ -36561,7 +36598,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						1142572037671992,
@@ -36581,7 +36618,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						6225264507386519,
@@ -36601,7 +36638,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						4661817014538213,
@@ -36621,7 +36658,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						9779809748280985,
@@ -36732,7 +36769,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetOpacity,
 						null,
 						215930189804362,
@@ -36748,7 +36785,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						9043079368846531,
@@ -36768,7 +36805,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						7399109677735407,
@@ -36788,7 +36825,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						9599951783779973,
@@ -36808,7 +36845,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						1113113251690721,
@@ -36828,7 +36865,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						6723441325443454,
@@ -36942,7 +36979,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetOpacity,
 						null,
 						4108777983621222,
@@ -36958,7 +36995,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						4219664272196596,
@@ -36978,7 +37015,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						8465695623402161,
@@ -36998,7 +37035,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						158959762090633,
@@ -37018,7 +37055,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						1330344364084469,
@@ -37038,7 +37075,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						5717755209632938,
@@ -37165,7 +37202,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetOpacity,
 						null,
 						4115714275137109,
@@ -37181,7 +37218,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						4227760501341097,
@@ -37201,7 +37238,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						8279862137862644,
@@ -37221,7 +37258,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						8983099089008585,
@@ -37241,7 +37278,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						5244783644979314,
@@ -37261,7 +37298,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						39,
+						40,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						7313205564583748,
@@ -37405,7 +37442,7 @@ false,false,8213204831356256,false
 					false
 				]
 ,				[
-					39,
+					40,
 					cr.plugins_.Sprite.prototype.acts.SetOpacity,
 					null,
 					8590945339850049,
@@ -37421,7 +37458,7 @@ false,false,8213204831356256,false
 					]
 				]
 ,				[
-					39,
+					40,
 					cr.plugins_.Sprite.prototype.acts.Spawn,
 					null,
 					9858616736956056,
@@ -37458,7 +37495,7 @@ false,false,8213204831356256,false
 						7,
 						[
 							21,
-							39,
+							40,
 							true,
 							null
 							,0
@@ -37467,7 +37504,7 @@ false,false,8213204831356256,false
 					]
 				]
 ,				[
-					39,
+					40,
 					cr.plugins_.Sprite.prototype.acts.Spawn,
 					null,
 					9790980225301504,
@@ -37504,7 +37541,7 @@ false,false,8213204831356256,false
 						7,
 						[
 							21,
-							39,
+							40,
 							true,
 							null
 							,1
@@ -37513,7 +37550,7 @@ false,false,8213204831356256,false
 					]
 				]
 ,				[
-					39,
+					40,
 					cr.plugins_.Sprite.prototype.acts.Spawn,
 					null,
 					6943649453093475,
@@ -37550,7 +37587,7 @@ false,false,8213204831356256,false
 						7,
 						[
 							21,
-							39,
+							40,
 							true,
 							null
 							,2
@@ -37559,7 +37596,7 @@ false,false,8213204831356256,false
 					]
 				]
 ,				[
-					39,
+					40,
 					cr.plugins_.Sprite.prototype.acts.Spawn,
 					null,
 					9132460347093546,
@@ -37596,7 +37633,7 @@ false,false,8213204831356256,false
 						7,
 						[
 							21,
-							39,
+							40,
 							true,
 							null
 							,3
@@ -37605,7 +37642,7 @@ false,false,8213204831356256,false
 					]
 				]
 ,				[
-					39,
+					40,
 					cr.plugins_.Sprite.prototype.acts.Spawn,
 					null,
 					8189243570912368,
@@ -37642,7 +37679,7 @@ false,false,8213204831356256,false
 						7,
 						[
 							21,
-							39,
+							40,
 							true,
 							null
 							,4
@@ -39447,7 +39484,7 @@ false,false,8213204831356256,false
 				,[
 				[
 					4,
-					30
+					39
 				]
 ,				[
 					5,
@@ -39466,7 +39503,7 @@ false,false,8213204831356256,false
 				]
 			]
 ,			[
-				30,
+				39,
 				cr.plugins_.Text.prototype.acts.SetText,
 				null,
 				6659792940356135,
@@ -39485,7 +39522,7 @@ false,false,8213204831356256,false
 				]
 			]
 ,			[
-				30,
+				39,
 				cr.plugins_.Text.prototype.acts.SetVisible,
 				null,
 				9434440865017565,
@@ -39520,7 +39557,7 @@ false,false,8213204831356256,false
 			],
 			[
 			[
-				30,
+				39,
 				cr.plugins_.Text.prototype.acts.Destroy,
 				null,
 				9923261084696262,
@@ -39893,7 +39930,7 @@ false,false,8350547247626701,false
 	false,
 	0,
 	0,
-	716,
+	717,
 	false,
 	true,
 	1,
