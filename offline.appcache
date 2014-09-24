@@ -1,5 +1,5 @@
 ﻿CACHE MANIFEST
-#1411537071
+#1411539179
 index.html
 c2runtime.js
 jquery-2.0.0.min.js
@@ -19,8 +19,10 @@ images/watplatslip.png
 images/watplatsub.png
 images/watplatsubdeep.png
 images/sandplat.png
+images/signpost-sheet0.png
 images/menubg-sheet0.png
 images/scorebg-sheet0.png
+images/dialogbg-sheet0.png
 images/player-sheet0.png
 images/tilemap.png
 images/teleporttile.png
