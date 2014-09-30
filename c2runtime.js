@@ -18148,6 +18148,543 @@ cr.plugins_.WebStorage = function(runtime)
 }());
 ;
 ;
+cr.plugins_.gamepad = function(runtime)
+{
+	this.runtime = runtime;
+};
+(function ()
+{
+	var pluginProto = cr.plugins_.gamepad.prototype;
+	var isSupported = false;
+	pluginProto.Type = function(plugin)
+	{
+		this.plugin = plugin;
+		this.runtime = plugin.runtime;
+		isSupported = !!(navigator["getGamepads"] || navigator["webkitGetGamepads"] || navigator["mozGetGamepads"] || navigator["gamepads"] || navigator["webkitGamepads"] || navigator["MozGamepads"] || window["cr_getGamepads"]);
+	};
+	var typeProto = pluginProto.Type.prototype;
+	typeProto.onCreate = function()
+	{
+	};
+	var gamepadRuntime = null;
+	var gamepadInstance = null;
+	var controllers = new Array(16);
+	var osToken = "";
+	var browserToken = "";
+	var axisOffset = 16;
+	var curCtrlMap = null;
+	var ctrlmap = {};
+	ctrlmap["windows"] = {};
+	ctrlmap["windows"]["firefox"] = {};
+	function doControllerMapping(index, isAxis, buttonmap, axismap)
+	{
+		if (isAxis)
+		{
+			if (index >= axismap.length)
+				return -1;			// unknown axis
+			if (cr.is_number(axismap[index]))
+				return axismap[index] + axisOffset;
+			else
+			{
+				return axismap[index];	// returning array
+			}
+		}
+		else
+		{
+			if (index >= buttonmap.length)
+				return -1;			// unknown button
+			return buttonmap[index];
+		}
+	};
+	var win_ff_xbox360_buttons = [0, 1, 2, 3, 4, 5, 8, 9, 10, 11];
+	var win_ff_xbox360_axes    = [0, 1, [7, 6], 2, 3, [14, 15], [12, 13]];
+	ctrlmap["windows"]["firefox"]["xbox360"] = function (index, isAxis)
+	{
+		return doControllerMapping(index, isAxis, win_ff_xbox360_buttons, win_ff_xbox360_axes);
+	};
+	var win_ff_lda_buttons = [2, 0, 1, 3, 4, 6, 5, 7, 8, 9];
+	var win_ff_lda_axes    = [0, 1, 2, 3, [14, 15], [12, 13]];
+	ctrlmap["windows"]["firefox"]["logitechdualaction"] = function (index, isAxis)
+	{
+		return doControllerMapping(index, isAxis, win_ff_lda_buttons, win_ff_lda_axes);
+	};
+	function defaultMap(index, isAxis)
+	{
+		if (isAxis)
+		{
+			if (index >= 4)
+				return -1;		// unknown axis
+			return index + axisOffset;
+		}
+		else
+		{
+			if (index >= 16)
+				return -1;		// unknown button
+			return index;
+		}
+	};
+	function getMapper(id_)
+	{
+		if (!curCtrlMap)
+			return defaultMap;
+		var controllertoken = "";
+		var id = id_.toLowerCase();
+		if (id.indexOf("xbox 360") > -1)
+			controllertoken = "xbox360";
+		else if (id.indexOf("logitech dual action") > -1)
+			controllertoken = "logitechdualaction";
+		var curmap = curCtrlMap[controllertoken];
+		return curmap || defaultMap;
+	};
+	function onConnected(e)
+	{
+		controllers[e["gamepad"]["index"]] = e["gamepad"];
+		gamepadRuntime.trigger(cr.plugins_.gamepad.prototype.cnds.OnGamepadConnected, gamepadInstance);
+	};
+	function onDisconnected(e)
+	{
+		gamepadRuntime.trigger(cr.plugins_.gamepad.prototype.cnds.OnGamepadDisconnected, gamepadInstance);
+		controllers[e["gamepad"]["index"]] = null;
+	};
+	pluginProto.Instance = function(type)
+	{
+		this.type = type;
+		this.runtime = type.runtime;
+		gamepadRuntime = this.runtime;
+		gamepadInstance = this;
+	};
+	var instanceProto = pluginProto.Instance.prototype;
+	instanceProto.onCreate = function()
+	{
+		this.deadzone = this.properties[0];
+		this.lastButton = 0;
+		var userAgent = navigator.userAgent;
+		osToken = "windows";
+		if (/mac/i.test(userAgent))
+			osToken = "mac";
+		curCtrlMap = ctrlmap[osToken];
+		browserToken = "chrome";
+		if (/firefox/i.test(userAgent))
+			browserToken = "firefox";
+		if (curCtrlMap)
+			curCtrlMap = curCtrlMap[browserToken];
+		window.addEventListener("webkitgamepadconnected", onConnected, false);
+		window.addEventListener("webkitgamepaddisconnected", onDisconnected, false);
+		window.addEventListener("MozGamepadConnected", onConnected, false);
+		window.addEventListener("MozGamepadDisconnected", onDisconnected, false);
+		window.addEventListener("gamepadconnected", onConnected, false);
+		window.addEventListener("gamepaddisconnected", onDisconnected, false);
+		this.runtime.tickMe(this);
+		this.activeControllers = [];
+	};
+	instanceProto.tick = function ()
+	{
+		this.activeControllers.length = 0;
+		var gamepads = null;
+		var synthetic = false;
+		if (navigator["getGamepads"])
+			gamepads = navigator["getGamepads"]();
+		else if (navigator["webkitGetGamepads"])
+			gamepads = navigator["webkitGetGamepads"]();
+		else if (navigator["mozGetGamepads"])
+			gamepads = navigator["mozGetGamepads"]();
+		else if (navigator["msGetGamepads"])
+			gamepads = navigator["msGetGamepads"]();
+		else if (this.runtime.isWindows8Capable && window["cr_getGamepads"])
+		{
+			gamepads = window["cr_getGamepads"]();
+			synthetic = true;
+		}
+		else
+			gamepads = navigator["gamepads"] || navigator["webkitGamepads"] || navigator["MozGamepads"] || controllers;
+		if (!gamepads)
+			return;
+		var i, len, j, lenj, mapfunc, index, value;
+		for (i = 0, len = gamepads.length; i < len; i++)
+		{
+			var pad = gamepads[i];
+			if (!pad)
+				continue;
+			if (!pad.c2state)
+			{
+				pad.c2state = new Array(20);
+				pad.c2oldstate = new Array(20);
+				for (j = 0; j < 20; j++)
+					pad.c2oldstate[j] = 0;
+			}
+			else
+			{
+				for (j = 0; j < 20; j++)
+					pad.c2oldstate[j] = pad.c2state[j];
+			}
+			mapfunc = (synthetic ? defaultMap : getMapper(pad.id));
+			for (j = 0, lenj = pad["buttons"].length; j < lenj; j++)
+			{
+				if (typeof pad["buttons"][j]["value"] !== "undefined")
+					value = pad["buttons"][j]["value"];
+				else
+					value = pad["buttons"][j];
+				index = mapfunc(j, false, value);
+				if (index >= 0 && index < 20)
+				{
+					pad.c2state[index] = value * 100;
+					if (pad.c2state[index] >= 50 && pad.c2oldstate[index] < 50)
+						this.lastButton = index;
+				}
+			}
+			for (j = 0, lenj = pad["axes"].length; j < lenj; j++)
+			{
+				value = pad["axes"][j];
+				index = mapfunc(j, true, value);
+				if (cr.is_number(index))
+				{
+					if (index >= 0 && index < 20)
+						pad.c2state[index] = value * 100;
+				}
+				else
+				{
+					pad.c2state[index[0]] = 0;
+					pad.c2state[index[1]] = 0;
+					if (value <= 0)
+						pad.c2state[index[0]] = Math.abs(value * 100);
+					else
+						pad.c2state[index[1]] = Math.abs(value * 100);
+				}
+			}
+			this.activeControllers.push(pad);
+		}
+	};
+	instanceProto.saveToJSON = function ()
+	{
+		return { "lastButton": this.lastButton };
+	};
+	instanceProto.loadFromJSON = function (o)
+	{
+		this.lastButton = o["lastButton"];
+	};
+	function Cnds() {};
+	Cnds.prototype.SupportsGamepad = function ()
+	{
+		return isSupported;
+	};
+	Cnds.prototype.OnGamepadConnected = function ()
+	{
+		return true;
+	};
+	Cnds.prototype.OnGamepadDisconnected = function ()
+	{
+		return true;
+	};
+	Cnds.prototype.IsButtonDown = function (gamepad, button)
+	{
+		gamepad = Math.floor(gamepad);
+		if (gamepad < 0 || gamepad >= this.activeControllers.length)
+			return false;
+		var pad = this.activeControllers[gamepad];
+		if (!pad.c2state)
+			return false;
+		var ret = pad.c2state[button] >= 50;
+		if (ret)
+			this.lastButton = button;
+		return ret;
+	};
+	Cnds.prototype.OnButtonDown = function (gamepad, button)
+	{
+		gamepad = Math.floor(gamepad);
+		if (gamepad < 0 || gamepad >= this.activeControllers.length)
+			return false;
+		var pad = this.activeControllers[gamepad];
+		if (!pad.c2state)
+			return false;
+		var ret = pad.c2state[button] >= 50 && pad.c2oldstate[button] < 50;
+		if (ret)
+			this.lastButton = button;
+		return ret;
+	};
+	Cnds.prototype.OnButtonUp = function (gamepad, button)
+	{
+		gamepad = Math.floor(gamepad);
+		if (gamepad < 0 || gamepad >= this.activeControllers.length)
+			return false;
+		var pad = this.activeControllers[gamepad];
+		if (!pad.c2state)
+			return false;
+		var ret = pad.c2state[button] < 50 && pad.c2oldstate[button] >= 50;
+		if (ret)
+			this.lastButton = button;
+		return ret;
+	};
+	Cnds.prototype.HasGamepads = function ()
+	{
+		return this.activeControllers.length > 0;
+	};
+	Cnds.prototype.CompareAxis = function (gamepad, axis, comparison, value)
+	{
+		gamepad = Math.floor(gamepad);
+		axis = Math.floor(axis);
+		if (gamepad < 0 || gamepad >= this.activeControllers.length)
+			return false;
+		var pad = this.activeControllers[gamepad];
+		if (!pad.c2state)
+			return false;
+		var axisvalue = pad.c2state[axis + axisOffset];
+		var othervalue = 0;
+		if (axis % 2 === 0)										// is X axis
+			othervalue = pad.c2state[axis + axisOffset + 1];	// get next axis (Y)
+		else
+			othervalue = pad.c2state[axis + axisOffset - 1];	// get previous axis (X)
+		if (Math.sqrt(axisvalue * axisvalue + othervalue * othervalue) <= this.deadzone)
+			axisvalue = 0;
+		return cr.do_cmp(axisvalue, comparison, value);
+	};
+	Cnds.prototype.OnAnyButtonDown = function (gamepad)
+	{
+		gamepad = Math.floor(gamepad);
+		if (gamepad < 0 || gamepad >= this.activeControllers.length)
+			return false;
+		var pad = this.activeControllers[gamepad];
+		if (!pad.c2state)
+			return false;
+		var i, len;
+		for (i = 0, len = pad.c2state.length; i < len; i++)
+		{
+			if (pad.c2state[i] >= 50 && pad.c2oldstate[i] < 50)
+			{
+				this.lastButton = i;
+				return true;
+			}
+		}
+		return false;
+	};
+	Cnds.prototype.OnAnyButtonUp = function (gamepad)
+	{
+		gamepad = Math.floor(gamepad);
+		if (gamepad < 0 || gamepad >= this.activeControllers.length)
+			return false;
+		var pad = this.activeControllers[gamepad];
+		if (!pad.c2state)
+			return false;
+		var i, len;
+		for (i = 0, len = pad.c2state.length; i < len; i++)
+		{
+			if (pad.c2state[i] < 50 && pad.c2oldstate[i] >= 50)
+			{
+				this.lastButton = i;
+				return true;
+			}
+		}
+		return false;
+	};
+	Cnds.prototype.IsButtonIndexDown = function (gamepad, button)
+	{
+		gamepad = Math.floor(gamepad);
+		if (gamepad < 0 || gamepad >= this.activeControllers.length)
+			return false;
+		var pad = this.activeControllers[gamepad];
+		if (!pad.c2state)
+			return false;
+		button = Math.floor(button);
+		if (button < 0 || button >= pad.c2state.length)
+			return false;
+		var ret = pad.c2state[button] >= 50;
+		if (ret)
+			this.lastButton = button;
+		return ret;
+	};
+	Cnds.prototype.OnButtonIndexDown = function (gamepad, button)
+	{
+		gamepad = Math.floor(gamepad);
+		if (gamepad < 0 || gamepad >= this.activeControllers.length)
+			return false;
+		var pad = this.activeControllers[gamepad];
+		if (!pad.c2state)
+			return false;
+		button = Math.floor(button);
+		if (button < 0 || button >= pad.c2state.length)
+			return false;
+		var ret = pad.c2state[button] >= 50 && pad.c2oldstate[button] < 50;
+		if (ret)
+			this.lastButton = button;
+		return ret;
+	};
+	Cnds.prototype.OnButtonIndexUp = function (gamepad, button)
+	{
+		gamepad = Math.floor(gamepad);
+		if (gamepad < 0 || gamepad >= this.activeControllers.length)
+			return false;
+		var pad = this.activeControllers[gamepad];
+		if (!pad.c2state)
+			return false;
+		button = Math.floor(button);
+		if (button < 0 || button >= pad.c2state.length)
+			return false;
+		var ret = pad.c2state[button] < 50 && pad.c2oldstate[button] >= 50;
+		if (ret)
+			this.lastButton = button;
+		return ret;
+	};
+	pluginProto.cnds = new Cnds();
+	function Acts() {};
+	pluginProto.acts = new Acts();
+	function Exps() {};
+	Exps.prototype.GamepadCount = function (ret)
+	{
+		ret.set_int(this.activeControllers.length);
+	};
+	Exps.prototype.GamepadID = function (ret, index)
+	{
+		if (index < 0 || index >= this.activeControllers.length)
+		{
+			ret.set_string("");
+			return;
+		}
+		ret.set_string(this.activeControllers[index].id);
+	};
+	Exps.prototype.GamepadAxes = function (ret, index)
+	{
+		if (index < 0 || index >= this.activeControllers.length)
+		{
+			ret.set_string("");
+			return;
+		}
+		var axes = this.activeControllers[index]["axes"];
+		var str = "";
+		var i, len;
+		for (i = 0, len = axes.length; i < len; i++)
+		{
+			str += "Axis " + i + ": " + Math.round(axes[i] * 100) + "\n";
+		}
+		ret.set_string(str);
+	};
+	Exps.prototype.GamepadButtons = function (ret, index)
+	{
+		if (index < 0 || index >= this.activeControllers.length)
+		{
+			ret.set_string("");
+			return;
+		}
+		var buttons = this.activeControllers[index]["buttons"];
+		var str = "";
+		var i, len, value;
+		for (i = 0, len = buttons.length; i < len; i++)
+		{
+			if (typeof buttons[i]["value"] !== "undefined")
+				value = buttons[i]["value"];
+			else
+				value = buttons[i];
+			str += "Button " + i + ": " + Math.round(value * 100) + "\n";
+		}
+		ret.set_string(str);
+	};
+	Exps.prototype.RawButton = function (ret, gamepad, index)
+	{
+		gamepad = Math.floor(gamepad);
+		index = Math.floor(index);
+		if (gamepad < 0 || gamepad >= this.activeControllers.length)
+		{
+			ret.set_float(0);
+			return;
+		}
+		var state = this.activeControllers[gamepad]["buttons"];
+		if (!state || index < 0 || index >= state.length)
+		{
+			ret.set_float(0);
+			return;
+		}
+		if (typeof state[index]["value"] !== "undefined")
+			ret.set_float(state[index]["value"]);
+		else
+			ret.set_float(state[index]);
+	};
+	Exps.prototype.RawAxis = function (ret, gamepad, index)
+	{
+		gamepad = Math.floor(gamepad);
+		index = Math.floor(index);
+		if (gamepad < 0 || gamepad >= this.activeControllers.length)
+		{
+			ret.set_float(0);
+			return;
+		}
+		var state = this.activeControllers[gamepad]["axes"];
+		if (!state || index < 0 || index >= state.length)
+		{
+			ret.set_float(0);
+			return;
+		}
+		ret.set_float(state[index]);
+	};
+	Exps.prototype.RawButtonCount = function (ret, gamepad)
+	{
+		gamepad = Math.floor(gamepad);
+		index = Math.floor(index);
+		if (gamepad < 0 || gamepad >= this.activeControllers.length)
+		{
+			ret.set_int(0);
+			return;
+		}
+		ret.set_int(this.activeControllers[gamepad]["buttons"].length);
+	};
+	Exps.prototype.RawAxisCount = function (ret, gamepad)
+	{
+		gamepad = Math.floor(gamepad);
+		index = Math.floor(index);
+		if (gamepad < 0 || gamepad >= this.activeControllers.length)
+		{
+			ret.set_int(0);
+			return;
+		}
+		ret.set_int(this.activeControllers[gamepad]["axes"].length);
+	};
+	Exps.prototype.Button = function (ret, gamepad, index)
+	{
+		gamepad = Math.floor(gamepad);
+		index = Math.floor(index);
+		if (gamepad < 0 || gamepad >= this.activeControllers.length)
+		{
+			ret.set_float(0);
+			return;
+		}
+		var state = this.activeControllers[gamepad].c2state;
+		if (!state || index < 0 || index >= axisOffset)
+		{
+			ret.set_float(0);
+			return;
+		}
+		ret.set_float(state[index]);
+	};
+	Exps.prototype.Axis = function (ret, gamepad, index)
+	{
+		gamepad = Math.floor(gamepad);
+		index = Math.floor(index);
+		if (gamepad < 0 || gamepad >= this.activeControllers.length)
+		{
+			ret.set_float(0);
+			return;
+		}
+		var state = this.activeControllers[gamepad].c2state;
+		if (!state || index < 0 || index >= 4)
+		{
+			ret.set_float(0);
+			return;
+		}
+		var value = state[index + axisOffset];
+		var othervalue = 0;
+		if (index % 2 === 0)								// is X axis
+			othervalue = state[index + axisOffset + 1];		// get next axis (Y)
+		else
+			othervalue = state[index + axisOffset - 1];		// get previous axis (X)
+		if (Math.sqrt(value * value + othervalue * othervalue) <= this.deadzone)
+			value = 0;
+		ret.set_float(value);
+	};
+	Exps.prototype.LastButton = function (ret)
+	{
+		ret.set_int(this.lastButton);
+	};
+	pluginProto.exps = new Exps();
+}());
+;
+;
 cr.behaviors.Pin = function(runtime)
 {
 	this.runtime = runtime;
@@ -19888,6 +20425,18 @@ cr.getProjectModel = function() { return [
 		false
 	]
 ,	[
+		cr.plugins_.gamepad,
+		true,
+		false,
+		false,
+		false,
+		false,
+		false,
+		false,
+		false,
+		false
+	]
+,	[
 		cr.plugins_.Arr,
 		false,
 		false,
@@ -20618,7 +21167,7 @@ cr.getProjectModel = function() { return [
 			false,
 			5055409531406128,
 			[
-				["images/dialogbg-sheet0.png", 305, 0, 0, 300, 122, 1, 0.09333333373069763, 0.1721311509609222,[["text 1", 0.003333333414047957, -0.4508196711540222],["text 2", 0.003333333414047957, -0.1885245889425278],["text 3", 0.003333333414047957, 0.07377049326896668],["text 4", 0.003333333414047957, 0.3278688490390778],["text 5", 0.003333333414047957, 0.5983606576919556]],[0.3366666734218597,0.8196721076965332,-0.09000000357627869,0.8196721076965332,-0.09000000357627869,-0.1721311509609222,0.3366666734218597,-0.1721311509609222],0]
+				["images/dialogbg-sheet0.png", 305, 0, 0, 300, 122, 1, 0.09333333373069763, 0.1721311509609222,[["text 1", 0.003333333414047957, -0.4508196711540222],["text 2", 0.003333333414047957, -0.1885245889425278],["text 3", 0.003333333414047957, 0.07377049326896668],["text 4", 0.003333333414047957, 0.3278688490390778],["text 5", 0.003333333414047957, 0.5983606576919556]],[0.3366666734218597,0.8196718692779541,-0.09000000357627869,0.8196718692779541,-0.09000000357627869,-0.1721311509609222,0.3366666734218597,-0.1721311509609222],0]
 			]
 			]
 		],
@@ -20632,6 +21181,78 @@ cr.getProjectModel = function() { return [
 	]
 ,	[
 		"t28",
+		cr.plugins_.AJAX,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		6710265368294809,
+		[],
+		null
+		,[]
+	]
+,	[
+		"t29",
+		cr.plugins_.Keyboard,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		8839418734357777,
+		[],
+		null
+		,[]
+	]
+,	[
+		"t30",
+		cr.plugins_.Mouse,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		8579544834942623,
+		[],
+		null
+		,[]
+	]
+,	[
+		"t31",
+		cr.plugins_.gamepad,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		4698564769551752,
+		[],
+		null
+		,[25]
+	]
+,	[
+		"t32",
 		cr.plugins_.Sprite,
 		false,
 		[8946168091057279,8089789374196396,3840141799288136],
@@ -20671,25 +21292,7 @@ cr.getProjectModel = function() { return [
 		null
 	]
 ,	[
-		"t29",
-		cr.plugins_.Keyboard,
-		false,
-		[],
-		0,
-		0,
-		null,
-		null,
-		[
-		],
-		false,
-		false,
-		8839418734357777,
-		[],
-		null
-		,[]
-	]
-,	[
-		"t30",
+		"t33",
 		cr.plugins_.Text,
 		false,
 		[],
@@ -20706,7 +21309,7 @@ cr.getProjectModel = function() { return [
 		null
 	]
 ,	[
-		"t31",
+		"t34",
 		cr.plugins_.Tilemap,
 		false,
 		[],
@@ -20724,7 +21327,7 @@ cr.getProjectModel = function() { return [
 		]
 	]
 ,	[
-		"t32",
+		"t35",
 		cr.plugins_.TiledBg,
 		false,
 		[9599564196203931,918604378893924,4221067365504859,4896217601647747,5313551225683918],
@@ -20746,7 +21349,7 @@ cr.getProjectModel = function() { return [
 		null
 	]
 ,	[
-		"t33",
+		"t36",
 		cr.plugins_.Text,
 		false,
 		[],
@@ -20763,7 +21366,7 @@ cr.getProjectModel = function() { return [
 		null
 	]
 ,	[
-		"t34",
+		"t37",
 		cr.plugins_.TiledBg,
 		false,
 		[9162953029708553,915029406212075,9718516169377618],
@@ -20785,43 +21388,7 @@ cr.getProjectModel = function() { return [
 		null
 	]
 ,	[
-		"t35",
-		cr.plugins_.Mouse,
-		false,
-		[],
-		0,
-		0,
-		null,
-		null,
-		[
-		],
-		false,
-		false,
-		8579544834942623,
-		[],
-		null
-		,[]
-	]
-,	[
-		"t36",
-		cr.plugins_.AJAX,
-		false,
-		[],
-		0,
-		0,
-		null,
-		null,
-		[
-		],
-		false,
-		false,
-		6710265368294809,
-		[],
-		null
-		,[]
-	]
-,	[
-		"t37",
+		"t38",
 		cr.plugins_.TextBox,
 		false,
 		[],
@@ -20843,7 +21410,7 @@ cr.getProjectModel = function() { return [
 		null
 	]
 ,	[
-		"t38",
+		"t39",
 		cr.plugins_.WebStorage,
 		false,
 		[],
@@ -20861,7 +21428,7 @@ cr.getProjectModel = function() { return [
 		,[]
 	]
 ,	[
-		"t39",
+		"t40",
 		cr.plugins_.Text,
 		false,
 		[],
@@ -20878,7 +21445,7 @@ cr.getProjectModel = function() { return [
 		null
 	]
 ,	[
-		"t40",
+		"t41",
 		cr.plugins_.Sprite,
 		true,
 		[5530504444911859,5103997696542789,5505081948213201,6800288658749061,2806796760717673],
@@ -20896,7 +21463,7 @@ cr.getProjectModel = function() { return [
 	]
 	],
 	[
-		[40,27,22]
+		[41,27,22]
 	],
 	[
 	[
@@ -20925,7 +21492,7 @@ cr.getProjectModel = function() { return [
 			[
 				[0, 0, 0, 2560, 1280, 0, 0, 1, 0, 0, 0, 0, [],
 [80, 40, "142x4,20,79x4,20,78x4,2x20,77x4,2x20,78x4,20,76x4,20,2x4,4x20,72x4,12x20,68x4,20,4,3x20,28,20,2x28,4x20,66x4,20,4,3x20,7x28,3x20,64x4,4x20,2x4,2x28,2x4,6x20,46x4,20,17x4,20,4,20,3x4,2x28,4x4,4x20,18x4,20,22x4,20,2x4,5x20,4,20,15x4,20,3x4,2x28,6x4,2x20,14x4,2x20,4,2x20,22x4,11x20,4,20,16x4,2x28,6x4,20,16x4,20,4,20,27x4,8x20,12x4,20,28,3x20,2x28,6x4,2x20,13x4,6x20,21x4,14x20,4,4x20,7x4,6x28,7x4,20,13x4,2x20,2x28,5x20,16x4,5x20,12x28,20,3x28,20,6x4,4x20,2x28,22x4,7x20,16x4,3x20,4x28,3x20,4x28,3x20,3x28,20,2x28,20,9x4,2x28,21x4,4x20,28,4x20,14x4,2x20,2x28,7x20,4x28,2x4,6x20,2x28,20,8x4,2x28,22x4,2x20,2x28,4,20,4,20,13x4,2x20,28,6x20,3x4,4x28,5x4,7x20,7x4,2x28,22x4,20,4,2x28,3x4,20,12x4,2x20,2x28,20,8x4,4x28,5x4,3x20,4,20,8x4,20,2x28,2x4,20,21x4,2x28,16x4,20,28,6x20,5x4,4x28,6x4,2x20,4,20,7x4,2x20,2x28,3x20,21x4,2x28,16x4,2x20,3x4,20,4,4x20,2x4,4x28,7x4,20,8x4,20,6x28,20,21x4,2x28,20,15x4,2x20,6x4,28,20,28,2x20,4x28,15x4,3x20,4,2x28,4,20,28,20,14x4,3x20,3x4,2x28,20,16x4,20,4x4,5x20,6x28,6x20,13x4,2x28,2x4,2x20,15x4,3x28,2x20,2x28,20,20x4,2x20,3x4,3x20,7x28,20,4,20,2x4,2x20,4,2x20,6x4,2x28,3x4,20,14x4,3x20,5x28,20,2x4,2x20,2x4,2x20,20x4,4x28,20,4,2x20,3x4,5x20,7x4,2x28,3x4,20,17x4,3x20,2x28,4x4,7x20,9x4,20,8x4,4x28,2x4,3x20,4,2x20,2x28,20,8x4,2x28,24x4,2x28,4x4,7x20,9x4,20,2x4,2x20,4x4,4x28,3x4,20,4,2x20,4,2x28,20,8x4,2x28,24x4,2x28,2x4,3x20,4,2x28,4,2x20,4,2x20,5x4,5x20,5x4,4x28,3x4,20,4x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,4,2x20,4,20,28,20,4x4,8x20,2x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,2x4,20,2x4,28,5x4,2x20,4,2x28,4,20,3x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,4x4,20,28,20,5x4,20,4,2x28,4,20,3x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,2x20,4,3x28,20,7x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,6x28,20,9x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,2x20,4,20,10x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,18x4"]],
-				31,
+				34,
 				46,
 				[
 				],
@@ -21058,7 +21625,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[256, 1088, 0, 32, 32, 0, 0, 1, 0.5, 1, 0, 0, []],
-				28,
+				32,
 				74,
 				[
 					["enter your name"],
@@ -21667,7 +22234,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[2464, 64, 0, 64, 128, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				34,
+				37,
 				207,
 				[
 					["World 01"],
@@ -21720,7 +22287,7 @@ cr.getProjectModel = function() { return [
 			[
 				[64, 64, 0, 192, 64, 0, 0, 1, 0, 0, 0, 0, [],
 [80, 40, "6x8,74x4,6x8,56x4,5,79x4,5,78x4,2x5,77x4,2x5,78x4,5,76x4,5,2x4,4x5,72x4,12x5,68x4,5,4,3x5,12,5,2x12,4x5,66x4,5,4,3x5,7x12,3x5,64x4,4x5,2x4,2x12,2x4,6x5,46x4,5,17x4,5,4,5,3x4,2x12,4x4,4x5,18x4,5,22x4,5,2x4,5x5,4,5,15x4,5,3x4,2x12,6x4,2x5,14x4,2x5,4,2x5,22x4,11x5,4,5,16x4,2x12,6x4,5,16x4,5,4,5,27x4,8x5,17x4,2x12,6x4,2x5,13x4,6x5,21x4,14x5,4,4x5,11x4,2x12,7x4,5,13x4,9x5,16x4,5x5,12x12,5,3x12,5,10x4,2x12,22x4,7x5,16x4,3x5,4x12,3x5,4x12,3x5,3x12,5,2x12,5,9x4,2x12,21x4,4x5,12,4x5,14x4,2x5,2x12,7x5,4x12,2x4,6x5,2x12,5,8x4,2x12,22x4,2x5,2x12,4,5,4,5,13x4,2x5,12,6x5,3x4,4x12,5x4,7x5,7x4,2x12,22x4,5,4,2x12,3x4,5,12x4,2x5,2x12,5,8x4,4x12,5x4,3x5,4,5,8x4,5,2x12,2x4,5,21x4,2x12,16x4,5,12,6x5,5x4,4x12,6x4,2x5,4,5,7x4,2x5,2x12,3x5,21x4,2x12,16x4,2x5,3x4,5,4,4x5,2x4,4x12,7x4,5,8x4,5,6x12,5,21x4,2x12,16x4,2x5,6x4,12,5,12,2x5,4x12,15x4,3x5,4,2x12,4,5,12,5,20x4,2x12,17x4,5,4x4,5x5,6x12,6x5,13x4,2x12,2x4,2x5,20x4,2x12,21x4,2x5,3x4,3x5,7x12,5,4,5,2x4,2x5,4,2x5,6x4,2x12,3x4,5,20x4,2x12,3x4,2x5,2x4,2x5,20x4,4x12,5,4,2x5,3x4,5x5,7x4,2x12,3x4,5,20x4,2x12,4x4,7x5,9x4,5,8x4,4x12,2x4,3x5,4,2x5,2x12,5,8x4,2x12,24x4,2x12,4x4,7x5,9x4,5,2x4,2x5,4x4,4x12,3x4,5,4,2x5,4,2x12,5,8x4,2x12,24x4,2x12,2x4,3x5,4,2x12,4,2x5,8x4,5x5,5x4,4x12,3x4,5,4x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,4,2x5,8x4,8x5,2x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,2x4,5,8x4,2x5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,32x4,2x12,144x4"]],
-				31,
+				34,
 				198,
 				[
 				],
@@ -21739,7 +22306,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[64, 64, 0, 192, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				33,
+				36,
 				199,
 				[
 				],
@@ -21791,7 +22358,7 @@ cr.getProjectModel = function() { return [
 			[
 				[0, 0, 0, 1280, 1024, 0, 0, 1, 0, 0, 0, 0, [],
 [40, 32, "300x4,20,35x4,20,3x4,2x20,29x4,20,2x4,20,4,2x20,3x4,2x20,27x4,13x20,2x4,20,24x4,20,4,15x20,22x4,4x20,4,3x28,9x20,2x4,20,20x4,2x20,4,20,4,2x20,2x28,20,28,11x20,22x4,3x20,4,4x28,20,5x28,3x20,23x4,2x20,2x4,5x28,4x20,2x28,3x20,21x4,2x20,3x4,4x28,4,2x20,4,2x20,2x28,2x20,26x4,4x28,4,2x20,2x4,6x20,8x4,2x20,5x4,3x20,5x4,3x20,3x28,6x4,5x20,9x4,2x20,4,4x20,8x4,2x20,3x28,6x4,4x20,10x4,10x20,6x4,4x28,6x4,3x20,10x4,12x20,5x4,2x28,2x20,7x4,2x20,10x4,2x20,4,20,3x28,4,20,2x4,20,5x4,3x28,3x20,9x4,20,2x4,4x20,4,20,3x4,3x28,10x4,4x28,10x4,5x20,4,3x20,4x4,3x28,10x4,4x28,12x4,7x20,4,20,2x4,3x28,8x4,3x20,3x28,11x4,3x20,4,2x28,2x20,4,20,2x4,2x28,3x20,5x4,2x20,4,4x28,15x4,2x28,4,20,4,2x20,4,3x28,10x4,4x28,15x4,2x28,4x4,3x20,2x28,10x4,4x28,11x4,3x20,4,2x28,6x4,3x28,10x4,4x28,13x4,3x20,28,6x4,3x28,10x4,4x28,15x4,2x28,6x4,3x28,10x4,4x28,15x4,2x28,2x4"]],
-				31,
+				34,
 				0,
 				[
 				],
@@ -21828,7 +22395,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[128, 684, 0, 32, 32, 0, 0, 1, 0.5, 1, 0, 0, []],
-				28,
+				32,
 				1,
 				[
 					["enter your name"],
@@ -22164,7 +22731,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[1056, 128, 0, 96, 64, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				34,
+				37,
 				209,
 				[
 					["World 01"],
@@ -22249,7 +22816,7 @@ cr.getProjectModel = function() { return [
 			[
 				[32, 64, 0, 192, 64, 0, 0, 1, 0, 0, 0, 0, [],
 [80, 40, "6x8,74x4,6x8,56x4,5,79x4,5,78x4,2x5,77x4,2x5,78x4,5,76x4,5,2x4,4x5,72x4,12x5,68x4,5,4,3x5,12,5,2x12,4x5,66x4,5,4,3x5,7x12,3x5,64x4,4x5,2x4,2x12,2x4,6x5,46x4,5,17x4,5,4,5,3x4,2x12,4x4,4x5,18x4,5,22x4,5,2x4,5x5,4,5,15x4,5,3x4,2x12,6x4,2x5,14x4,2x5,4,2x5,22x4,11x5,4,5,16x4,2x12,6x4,5,16x4,5,4,5,27x4,8x5,17x4,2x12,6x4,2x5,13x4,6x5,21x4,14x5,4,4x5,11x4,2x12,7x4,5,13x4,9x5,16x4,5x5,12x12,5,3x12,5,10x4,2x12,22x4,7x5,16x4,3x5,4x12,3x5,4x12,3x5,3x12,5,2x12,5,9x4,2x12,21x4,4x5,12,4x5,14x4,2x5,2x12,7x5,4x12,2x4,6x5,2x12,5,8x4,2x12,22x4,2x5,2x12,4,5,4,5,13x4,2x5,12,6x5,3x4,4x12,5x4,7x5,7x4,2x12,22x4,5,4,2x12,3x4,5,12x4,2x5,2x12,5,8x4,4x12,5x4,3x5,4,5,8x4,5,2x12,2x4,5,21x4,2x12,16x4,5,12,6x5,5x4,4x12,6x4,2x5,4,5,7x4,2x5,2x12,3x5,21x4,2x12,16x4,2x5,3x4,5,4,4x5,2x4,4x12,7x4,5,8x4,5,6x12,5,21x4,2x12,16x4,2x5,6x4,12,5,12,2x5,4x12,15x4,3x5,4,2x12,4,5,12,5,20x4,2x12,17x4,5,4x4,5x5,6x12,6x5,13x4,2x12,2x4,2x5,20x4,2x12,21x4,2x5,3x4,3x5,7x12,5,4,5,2x4,2x5,4,2x5,6x4,2x12,3x4,5,20x4,2x12,3x4,2x5,2x4,2x5,20x4,4x12,5,4,2x5,3x4,5x5,7x4,2x12,3x4,5,20x4,2x12,4x4,7x5,9x4,5,8x4,4x12,2x4,3x5,4,2x5,2x12,5,8x4,2x12,24x4,2x12,4x4,7x5,9x4,5,2x4,2x5,4x4,4x12,3x4,5,4,2x5,4,2x12,5,8x4,2x12,24x4,2x12,2x4,3x5,4,2x12,4,2x5,8x4,5x5,5x4,4x12,3x4,5,4x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,4,2x5,8x4,8x5,2x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,2x4,5,8x4,2x5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,32x4,2x12,144x4"]],
-				31,
+				34,
 				200,
 				[
 				],
@@ -22268,7 +22835,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[32, 64, 0, 192, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				33,
+				36,
 				201,
 				[
 				],
@@ -22320,7 +22887,7 @@ cr.getProjectModel = function() { return [
 			[
 				[0, 0, 0, 2560, 1280, 0, 0, 1, 0, 0, 0, 0, [],
 [80, 40, "142x4,20,79x4,20,78x4,2x20,77x4,2x20,78x4,20,76x4,20,2x4,4x20,72x4,12x20,68x4,20,4,3x20,28,20,2x28,4x20,66x4,20,4,3x20,7x28,3x20,64x4,4x20,2x4,2x28,2x4,6x20,46x4,20,17x4,20,4,20,3x4,2x28,4x4,4x20,18x4,20,22x4,20,2x4,5x20,4,20,15x4,20,3x4,2x28,6x4,2x20,14x4,2x20,4,2x20,22x4,11x20,4,20,16x4,2x28,6x4,20,16x4,20,4,20,27x4,8x20,17x4,2x28,6x4,2x20,13x4,6x20,21x4,14x20,4,4x20,11x4,2x28,7x4,20,13x4,9x20,16x4,5x20,12x28,20,3x28,20,10x4,2x28,22x4,7x20,16x4,3x20,4x28,3x20,4x28,3x20,3x28,20,2x28,20,9x4,2x28,21x4,4x20,28,4x20,14x4,2x20,2x28,7x20,4x28,2x4,6x20,2x28,20,8x4,2x28,22x4,2x20,2x28,4,20,4,20,13x4,2x20,28,6x20,3x4,4x28,5x4,7x20,7x4,2x28,22x4,20,4,2x28,3x4,20,12x4,2x20,2x28,20,8x4,4x28,5x4,3x20,4,20,8x4,20,2x28,2x4,20,21x4,2x28,16x4,20,28,6x20,5x4,4x28,6x4,2x20,4,20,7x4,2x20,2x28,3x20,21x4,2x28,16x4,2x20,3x4,20,4,4x20,2x4,4x28,7x4,20,8x4,20,6x28,20,21x4,2x28,16x4,2x20,6x4,28,20,28,2x20,4x28,15x4,3x20,4,2x28,4,20,28,20,20x4,2x28,17x4,20,4x4,5x20,6x28,6x20,13x4,2x28,2x4,2x20,20x4,2x28,21x4,2x20,3x4,3x20,7x28,20,4,20,2x4,2x20,4,2x20,6x4,2x28,3x4,20,20x4,2x28,3x4,2x20,2x4,2x20,20x4,4x28,20,4,2x20,3x4,5x20,7x4,2x28,3x4,20,20x4,2x28,4x4,7x20,9x4,20,8x4,4x28,2x4,3x20,4,2x20,2x28,20,8x4,2x28,24x4,2x28,4x4,7x20,9x4,20,2x4,2x20,4x4,4x28,3x4,20,4,2x20,4,2x28,20,8x4,2x28,24x4,2x28,2x4,3x20,4,2x28,4,2x20,8x4,5x20,5x4,4x28,3x4,20,4x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,4,2x20,8x4,8x20,2x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,2x4,20,8x4,2x20,4,2x28,4,20,3x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,12x4,20,4,2x28,4,20,3x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,18x4"]],
-				31,
+				34,
 				94,
 				[
 				],
@@ -22405,7 +22972,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[151, 243, 0, 32, 32, 0, 0, 1, 0.5, 1, 0, 0, []],
-				28,
+				32,
 				217,
 				[
 					["enter your name"],
@@ -22436,7 +23003,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[2464, 64, 0, 64, 128, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				34,
+				37,
 				250,
 				[
 					["World 01"],
@@ -23192,7 +23759,7 @@ cr.getProjectModel = function() { return [
 			[
 				[64, 64, 0, 192, 64, 0, 0, 1, 0, 0, 0, 0, [],
 [80, 40, "6x8,74x4,6x8,56x4,5,79x4,5,78x4,2x5,77x4,2x5,78x4,5,76x4,5,2x4,4x5,72x4,12x5,68x4,5,4,3x5,12,5,2x12,4x5,66x4,5,4,3x5,7x12,3x5,64x4,4x5,2x4,2x12,2x4,6x5,46x4,5,17x4,5,4,5,3x4,2x12,4x4,4x5,18x4,5,22x4,5,2x4,5x5,4,5,15x4,5,3x4,2x12,6x4,2x5,14x4,2x5,4,2x5,22x4,11x5,4,5,16x4,2x12,6x4,5,16x4,5,4,5,27x4,8x5,17x4,2x12,6x4,2x5,13x4,6x5,21x4,14x5,4,4x5,11x4,2x12,7x4,5,13x4,9x5,16x4,5x5,12x12,5,3x12,5,10x4,2x12,22x4,7x5,16x4,3x5,4x12,3x5,4x12,3x5,3x12,5,2x12,5,9x4,2x12,21x4,4x5,12,4x5,14x4,2x5,2x12,7x5,4x12,2x4,6x5,2x12,5,8x4,2x12,22x4,2x5,2x12,4,5,4,5,13x4,2x5,12,6x5,3x4,4x12,5x4,7x5,7x4,2x12,22x4,5,4,2x12,3x4,5,12x4,2x5,2x12,5,8x4,4x12,5x4,3x5,4,5,8x4,5,2x12,2x4,5,21x4,2x12,16x4,5,12,6x5,5x4,4x12,6x4,2x5,4,5,7x4,2x5,2x12,3x5,21x4,2x12,16x4,2x5,3x4,5,4,4x5,2x4,4x12,7x4,5,8x4,5,6x12,5,21x4,2x12,16x4,2x5,6x4,12,5,12,2x5,4x12,15x4,3x5,4,2x12,4,5,12,5,20x4,2x12,17x4,5,4x4,5x5,6x12,6x5,13x4,2x12,2x4,2x5,20x4,2x12,21x4,2x5,3x4,3x5,7x12,5,4,5,2x4,2x5,4,2x5,6x4,2x12,3x4,5,20x4,2x12,3x4,2x5,2x4,2x5,20x4,4x12,5,4,2x5,3x4,5x5,7x4,2x12,3x4,5,20x4,2x12,4x4,7x5,9x4,5,8x4,4x12,2x4,3x5,4,2x5,2x12,5,8x4,2x12,24x4,2x12,4x4,7x5,9x4,5,2x4,2x5,4x4,4x12,3x4,5,4,2x5,4,2x12,5,8x4,2x12,24x4,2x12,2x4,3x5,4,2x12,4,2x5,8x4,5x5,5x4,4x12,3x4,5,4x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,4,2x5,8x4,8x5,2x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,2x4,5,8x4,2x5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,32x4,2x12,144x4"]],
-				31,
+				34,
 				252,
 				[
 				],
@@ -23211,7 +23778,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[64, 64, 0, 192, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				33,
+				36,
 				253,
 				[
 				],
@@ -23263,7 +23830,7 @@ cr.getProjectModel = function() { return [
 			[
 				[0, 0, 0, 2560, 1280, 0, 0, 1, 0, 0, 0, 0, [],
 [80, 40, "142x4,20,79x4,20,78x4,2x20,77x4,2x20,78x4,20,76x4,20,2x4,4x20,72x4,12x20,68x4,20,4,3x20,28,20,2x28,4x20,66x4,20,4,3x20,7x28,3x20,64x4,4x20,2x4,2x28,2x4,6x20,46x4,20,17x4,20,4,20,3x4,2x28,4x4,4x20,18x4,20,22x4,20,2x4,5x20,4,20,15x4,20,3x4,2x28,6x4,2x20,14x4,2x20,4,2x20,22x4,11x20,4,20,16x4,2x28,6x4,20,16x4,20,4,20,27x4,8x20,17x4,2x28,6x4,2x20,13x4,6x20,4,20,19x4,14x20,4,4x20,11x4,2x28,7x4,20,13x4,9x20,16x4,5x20,12x28,20,3x28,20,10x4,2x28,22x4,7x20,16x4,3x20,4x28,3x20,4x28,3x20,3x28,20,2x28,20,9x4,2x28,21x4,4x20,28,4x20,14x4,2x20,2x28,7x20,4x28,2x4,6x20,2x28,20,8x4,2x28,22x4,2x20,2x28,4,20,4,20,13x4,2x20,28,6x20,3x4,4x28,5x4,7x20,7x4,2x28,22x4,20,4,2x28,3x4,20,12x4,2x20,2x28,20,8x4,4x28,5x4,3x20,4,20,8x4,20,2x28,2x4,20,19x4,20,4,2x28,16x4,20,28,6x20,5x4,4x28,6x4,2x20,4,20,7x4,2x20,2x28,3x20,21x4,2x28,16x4,2x20,3x4,20,4,4x20,2x4,4x28,7x4,20,8x4,20,6x28,20,21x4,2x28,16x4,2x20,6x4,28,20,28,2x20,4x28,15x4,3x20,4,2x28,4,20,28,20,20x4,20,28,17x4,20,4x4,5x20,6x28,6x20,13x4,2x28,2x4,2x20,19x4,20,2x28,21x4,2x20,3x4,3x20,7x28,20,4,20,2x4,2x20,4,2x20,6x4,2x28,3x4,20,20x4,2x28,3x4,2x20,2x4,2x20,13x4,20,6x4,4x28,20,4,2x20,3x4,5x20,7x4,2x28,3x4,20,20x4,2x28,4x4,7x20,9x4,20,8x4,4x28,20,4,3x20,4,2x20,2x28,20,8x4,2x28,24x4,2x28,4x4,7x20,9x4,20,2x4,2x20,4x4,4x28,3x4,20,4,2x20,4,2x28,20,8x4,2x28,24x4,28,20,2x4,3x20,4,2x28,4,2x20,8x4,5x20,5x4,4x28,3x4,20,4x4,2x28,9x4,2x28,24x4,2x28,20,5x4,2x28,4,2x20,8x4,8x20,2x4,4x28,8x4,2x28,9x4,2x28,24x4,28,2x20,5x4,2x28,2x4,20,8x4,2x20,4,2x28,4,20,3x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,20,5x4,2x28,12x4,20,4,2x28,4,20,3x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,20,5x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,18x4"]],
-				31,
+				34,
 				53,
 				[
 				],
@@ -23348,7 +23915,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[151, 243, 0, 32, 32, 0, 0, 1, 0.5, 1, 0, 0, []],
-				28,
+				32,
 				273,
 				[
 					["enter your name"],
@@ -23379,7 +23946,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[2464, 64, 0, 64, 128, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				34,
+				37,
 				274,
 				[
 					["World 01"],
@@ -23498,7 +24065,7 @@ cr.getProjectModel = function() { return [
 			[
 				[64, 64, 0, 192, 64, 0, 0, 1, 0, 0, 0, 0, [],
 [80, 40, "6x8,74x4,6x8,56x4,5,79x4,5,78x4,2x5,77x4,2x5,78x4,5,76x4,5,2x4,4x5,72x4,12x5,68x4,5,4,3x5,12,5,2x12,4x5,66x4,5,4,3x5,7x12,3x5,64x4,4x5,2x4,2x12,2x4,6x5,46x4,5,17x4,5,4,5,3x4,2x12,4x4,4x5,18x4,5,22x4,5,2x4,5x5,4,5,15x4,5,3x4,2x12,6x4,2x5,14x4,2x5,4,2x5,22x4,11x5,4,5,16x4,2x12,6x4,5,16x4,5,4,5,27x4,8x5,17x4,2x12,6x4,2x5,13x4,6x5,21x4,14x5,4,4x5,11x4,2x12,7x4,5,13x4,9x5,16x4,5x5,12x12,5,3x12,5,10x4,2x12,22x4,7x5,16x4,3x5,4x12,3x5,4x12,3x5,3x12,5,2x12,5,9x4,2x12,21x4,4x5,12,4x5,14x4,2x5,2x12,7x5,4x12,2x4,6x5,2x12,5,8x4,2x12,22x4,2x5,2x12,4,5,4,5,13x4,2x5,12,6x5,3x4,4x12,5x4,7x5,7x4,2x12,22x4,5,4,2x12,3x4,5,12x4,2x5,2x12,5,8x4,4x12,5x4,3x5,4,5,8x4,5,2x12,2x4,5,21x4,2x12,16x4,5,12,6x5,5x4,4x12,6x4,2x5,4,5,7x4,2x5,2x12,3x5,21x4,2x12,16x4,2x5,3x4,5,4,4x5,2x4,4x12,7x4,5,8x4,5,6x12,5,21x4,2x12,16x4,2x5,6x4,12,5,12,2x5,4x12,15x4,3x5,4,2x12,4,5,12,5,20x4,2x12,17x4,5,4x4,5x5,6x12,6x5,13x4,2x12,2x4,2x5,20x4,2x12,21x4,2x5,3x4,3x5,7x12,5,4,5,2x4,2x5,4,2x5,6x4,2x12,3x4,5,20x4,2x12,3x4,2x5,2x4,2x5,20x4,4x12,5,4,2x5,3x4,5x5,7x4,2x12,3x4,5,20x4,2x12,4x4,7x5,9x4,5,8x4,4x12,2x4,3x5,4,2x5,2x12,5,8x4,2x12,24x4,2x12,4x4,7x5,9x4,5,2x4,2x5,4x4,4x12,3x4,5,4,2x5,4,2x12,5,8x4,2x12,24x4,2x12,2x4,3x5,4,2x12,4,2x5,8x4,5x5,5x4,4x12,3x4,5,4x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,4,2x5,8x4,8x5,2x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,2x4,5,8x4,2x5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,32x4,2x12,144x4"]],
-				31,
+				34,
 				322,
 				[
 				],
@@ -23517,7 +24084,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[64, 64, 0, 192, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				33,
+				36,
 				323,
 				[
 				],
@@ -23569,7 +24136,7 @@ cr.getProjectModel = function() { return [
 			[
 				[0, 0, 0, 2560, 1280, 0, 0, 1, 0, 0, 0, 0, [],
 [80, 40, "142x4,20,79x4,20,78x4,2x20,77x4,2x20,78x4,20,76x4,20,2x4,4x20,72x4,12x20,68x4,20,4,3x20,28,20,2x28,4x20,66x4,20,4,3x20,7x28,3x20,64x4,4x20,2x4,2x28,2x4,6x20,46x4,20,17x4,20,4,20,3x4,2x28,4x4,4x20,18x4,20,22x4,20,2x4,5x20,4,20,15x4,20,3x4,2x28,6x4,2x20,14x4,2x20,4,2x20,22x4,11x20,4,20,16x4,2x28,6x4,20,16x4,20,4,20,27x4,8x20,17x4,2x28,6x4,2x20,13x4,6x20,21x4,14x20,4,4x20,11x4,2x28,7x4,20,13x4,9x20,16x4,5x20,3x28,20,8x28,20,3x28,20,10x4,2x28,22x4,7x20,16x4,3x20,4x28,3x20,4x28,3x20,3x28,20,2x28,20,9x4,2x28,21x4,4x20,28,4x20,14x4,2x20,2x28,7x20,4x28,2x4,6x20,2x28,20,8x4,2x28,22x4,2x20,2x28,4,20,4,20,13x4,9x20,3x4,4x28,5x4,7x20,7x4,2x28,22x4,20,4,2x28,3x4,20,12x4,2x20,2x28,20,8x4,4x28,5x4,3x20,4,20,8x4,20,2x28,2x4,20,21x4,2x28,16x4,20,28,6x20,5x4,4x28,6x4,2x20,4,20,7x4,2x20,2x28,3x20,21x4,2x28,16x4,2x20,3x4,20,4,4x20,2x4,4x28,7x4,20,8x4,20,6x28,20,21x4,2x28,16x4,2x20,6x4,28,20,28,2x20,4x28,15x4,3x20,4,2x28,4,20,28,20,20x4,2x28,17x4,20,4x4,5x20,6x28,6x20,13x4,2x28,2x4,2x20,20x4,2x28,21x4,2x20,3x4,3x20,7x28,20,4,20,2x4,2x20,4,2x20,6x4,2x28,3x4,20,20x4,2x28,3x4,2x20,2x4,2x20,20x4,4x28,20,4,2x20,3x4,5x20,7x4,2x28,3x4,20,20x4,2x28,4x4,7x20,9x4,20,8x4,4x28,2x4,3x20,4,2x20,2x28,20,8x4,2x28,24x4,2x28,4x4,7x20,9x4,20,2x4,2x20,4x4,4x28,3x4,20,4,2x20,4,2x28,20,8x4,2x28,24x4,2x28,2x4,3x20,4,2x28,4,2x20,8x4,5x20,5x4,4x28,3x4,20,4x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,4,2x20,8x4,8x20,2x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,2x4,20,8x4,2x20,4,2x28,4,20,3x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,12x4,20,4,2x28,4,20,3x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,24x4,2x28,6x4,2x28,14x4,2x28,5x4,4x28,8x4,2x28,9x4,2x28,18x4"]],
-				31,
+				34,
 				276,
 				[
 				],
@@ -23654,7 +24221,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[151, 243, 0, 32, 32, 0, 0, 1, 0.5, 1, 0, 0, []],
-				28,
+				32,
 				280,
 				[
 					["enter your name"],
@@ -23685,7 +24252,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[2464, 64, 0, 64, 128, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				34,
+				37,
 				281,
 				[
 					["World 01"],
@@ -23804,7 +24371,7 @@ cr.getProjectModel = function() { return [
 			[
 				[64, 64, 0, 192, 64, 0, 0, 1, 0, 0, 0, 0, [],
 [80, 40, "6x8,74x4,6x8,56x4,5,79x4,5,78x4,2x5,77x4,2x5,78x4,5,76x4,5,2x4,4x5,72x4,12x5,68x4,5,4,3x5,12,5,2x12,4x5,66x4,5,4,3x5,7x12,3x5,64x4,4x5,2x4,2x12,2x4,6x5,46x4,5,17x4,5,4,5,3x4,2x12,4x4,4x5,18x4,5,22x4,5,2x4,5x5,4,5,15x4,5,3x4,2x12,6x4,2x5,14x4,2x5,4,2x5,22x4,11x5,4,5,16x4,2x12,6x4,5,16x4,5,4,5,27x4,8x5,17x4,2x12,6x4,2x5,13x4,6x5,21x4,14x5,4,4x5,11x4,2x12,7x4,5,13x4,9x5,16x4,5x5,12x12,5,3x12,5,10x4,2x12,22x4,7x5,16x4,3x5,4x12,3x5,4x12,3x5,3x12,5,2x12,5,9x4,2x12,21x4,4x5,12,4x5,14x4,2x5,2x12,7x5,4x12,2x4,6x5,2x12,5,8x4,2x12,22x4,2x5,2x12,4,5,4,5,13x4,2x5,12,6x5,3x4,4x12,5x4,7x5,7x4,2x12,22x4,5,4,2x12,3x4,5,12x4,2x5,2x12,5,8x4,4x12,5x4,3x5,4,5,8x4,5,2x12,2x4,5,21x4,2x12,16x4,5,12,6x5,5x4,4x12,6x4,2x5,4,5,7x4,2x5,2x12,3x5,21x4,2x12,16x4,2x5,3x4,5,4,4x5,2x4,4x12,7x4,5,8x4,5,6x12,5,21x4,2x12,16x4,2x5,6x4,12,5,12,2x5,4x12,15x4,3x5,4,2x12,4,5,12,5,20x4,2x12,17x4,5,4x4,5x5,6x12,6x5,13x4,2x12,2x4,2x5,20x4,2x12,21x4,2x5,3x4,3x5,7x12,5,4,5,2x4,2x5,4,2x5,6x4,2x12,3x4,5,20x4,2x12,3x4,2x5,2x4,2x5,20x4,4x12,5,4,2x5,3x4,5x5,7x4,2x12,3x4,5,20x4,2x12,4x4,7x5,9x4,5,8x4,4x12,2x4,3x5,4,2x5,2x12,5,8x4,2x12,24x4,2x12,4x4,7x5,9x4,5,2x4,2x5,4x4,4x12,3x4,5,4,2x5,4,2x12,5,8x4,2x12,24x4,2x12,2x4,3x5,4,2x12,4,2x5,8x4,5x5,5x4,4x12,3x4,5,4x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,4,2x5,8x4,8x5,2x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,2x4,5,8x4,2x5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,32x4,2x12,144x4"]],
-				31,
+				34,
 				287,
 				[
 				],
@@ -23823,7 +24390,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[64, 64, 0, 192, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				33,
+				36,
 				288,
 				[
 				],
@@ -23875,7 +24442,7 @@ cr.getProjectModel = function() { return [
 			[
 				[0, 0, 0, 2560, 1024, 0, 0, 1, 0, 0, 0, 0, [],
 [80, 32, "1318x50,2x122,12x50,16,6x50,16,2x50,19,52x50,5x122,19x50,16,2x50,19,50x50,3x122,3x106,2x122,16x50,19,50,19,2x50,2x19,17,16,47x50,2x122,5x106,122,20x50,3x19,27x50,3x122,9x50,16,9x50,122,6x106,3x122,8x50,16,90,10x50,2x19,16,24x50,2x122,106,3x122,14x50,4x122,8x106,2x122,5x50,90,4x122,7x50,17,50,3x122,23x50,2x122,4x106,3x122,4x50,4x122,4x50,2x122,11x106,2x122,90,19,2x90,122,3x106,122,90,7x50,122,2x106,122,12x50,2x122,8x50,90,122,7x106,3x122,90,122,2x106,3x122,2x50,2x122,13x106,122,3x90,122,5x106,2x122,5x50,2x122,2x106,122,90,9x50,3x122,106,5x50,3x90,2x122,9x106,3x122,3x106,2x122,50,2x122,14x106,2x122,90,122,7x106,3x122,2x50,2x122,3x106,3x122,6x50,90,122,4x106,3x50,90,5x122,7x106,5x122,4x106,3x122,17x106,3x122,9x106,4x122,6x106,2x122,90,2x50,2x90,2x122,4x106,2x90,3x122,2x106,2x122,7x106,4x122,6x106,2x122,18x106,3x122,9x106,2x122,8x106,2x122,90,50,90,2x122,5x106,3x122,4x106,122,8x106,2x122,8x106,2x122,18x106,3x122,10x106,122,9x106,122,3x90,122,6x106,122,15x106,122,10x106,122,20x106,122,10x106,122,26x106,68x122,6x106,160x2"]],
-				31,
+				34,
 				176,
 				[
 				],
@@ -23928,7 +24495,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[160, 736, 0, 32, 32, 0, 0, 1, 0.5, 1, 0, 0, []],
-				28,
+				32,
 				180,
 				[
 					["enter your name"],
@@ -24231,7 +24798,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[2304, 704, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				34,
+				37,
 				203,
 				[
 					["World 02"],
@@ -24268,7 +24835,7 @@ cr.getProjectModel = function() { return [
 			[
 				[32, 64, 0, 192, 64, 0, 0, 1, 0, 0, 0, 0, [],
 [80, 40, "6x8,74x4,6x8,56x4,5,79x4,5,78x4,2x5,77x4,2x5,78x4,5,76x4,5,2x4,4x5,72x4,12x5,68x4,5,4,3x5,12,5,2x12,4x5,66x4,5,4,3x5,7x12,3x5,64x4,4x5,2x4,2x12,2x4,6x5,46x4,5,17x4,5,4,5,3x4,2x12,4x4,4x5,18x4,5,22x4,5,2x4,5x5,4,5,15x4,5,3x4,2x12,6x4,2x5,14x4,2x5,4,2x5,22x4,11x5,4,5,16x4,2x12,6x4,5,16x4,5,4,5,27x4,8x5,17x4,2x12,6x4,2x5,13x4,6x5,21x4,14x5,4,4x5,11x4,2x12,7x4,5,13x4,9x5,16x4,5x5,12x12,5,3x12,5,10x4,2x12,22x4,7x5,16x4,3x5,4x12,3x5,4x12,3x5,3x12,5,2x12,5,9x4,2x12,21x4,4x5,12,4x5,14x4,2x5,2x12,7x5,4x12,2x4,6x5,2x12,5,8x4,2x12,22x4,2x5,2x12,4,5,4,5,13x4,2x5,12,6x5,3x4,4x12,5x4,7x5,7x4,2x12,22x4,5,4,2x12,3x4,5,12x4,2x5,2x12,5,8x4,4x12,5x4,3x5,4,5,8x4,5,2x12,2x4,5,21x4,2x12,16x4,5,12,6x5,5x4,4x12,6x4,2x5,4,5,7x4,2x5,2x12,3x5,21x4,2x12,16x4,2x5,3x4,5,4,4x5,2x4,4x12,7x4,5,8x4,5,6x12,5,21x4,2x12,16x4,2x5,6x4,12,5,12,2x5,4x12,15x4,3x5,4,2x12,4,5,12,5,20x4,2x12,17x4,5,4x4,5x5,6x12,6x5,13x4,2x12,2x4,2x5,20x4,2x12,21x4,2x5,3x4,3x5,7x12,5,4,5,2x4,2x5,4,2x5,6x4,2x12,3x4,5,20x4,2x12,3x4,2x5,2x4,2x5,20x4,4x12,5,4,2x5,3x4,5x5,7x4,2x12,3x4,5,20x4,2x12,4x4,7x5,9x4,5,8x4,4x12,2x4,3x5,4,2x5,2x12,5,8x4,2x12,24x4,2x12,4x4,7x5,9x4,5,2x4,2x5,4x4,4x12,3x4,5,4,2x5,4,2x12,5,8x4,2x12,24x4,2x12,2x4,3x5,4,2x12,4,2x5,8x4,5x5,5x4,4x12,3x4,5,4x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,4,2x5,8x4,8x5,2x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,2x4,5,8x4,2x5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,32x4,2x12,144x4"]],
-				31,
+				34,
 				194,
 				[
 				],
@@ -24287,7 +24854,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[32, 64, 0, 192, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				33,
+				36,
 				197,
 				[
 				],
@@ -24353,7 +24920,7 @@ cr.getProjectModel = function() { return [
 			[
 				[0, 0, 0, 2560, 1024, 0, 0, 1, 0, 0, 0, 0, [],
 [80, 32, "1318x50,2x122,12x50,16,6x50,16,2x50,19,52x50,5x122,19x50,16,2x50,19,50x50,3x122,3x106,2x122,16x50,19,50,19,2x50,2x19,17,16,47x50,2x122,5x106,122,20x50,3x19,27x50,3x122,9x50,16,9x50,122,6x106,3x122,8x50,16,90,10x50,2x19,16,24x50,2x122,106,3x122,14x50,4x122,8x106,2x122,5x50,90,4x122,7x50,17,50,3x122,23x50,2x122,4x106,3x122,4x50,4x122,4x50,2x122,11x106,2x122,90,19,2x90,122,3x106,122,90,7x50,122,2x106,122,12x50,2x122,8x50,90,122,7x106,3x122,90,122,2x106,3x122,2x50,2x122,13x106,122,3x90,122,5x106,2x122,5x50,2x122,2x106,122,90,9x50,3x122,106,5x50,3x90,2x122,9x106,3x122,3x106,2x122,50,2x122,14x106,2x122,90,122,7x106,3x122,2x50,2x122,3x106,3x122,6x50,90,122,4x106,3x50,90,5x122,7x106,5x122,4x106,3x122,17x106,3x122,9x106,4x122,6x106,2x122,90,2x50,2x90,2x122,4x106,2x90,3x122,2x106,2x122,7x106,4x122,6x106,2x122,18x106,3x122,9x106,2x122,8x106,2x122,90,50,90,2x122,5x106,3x122,4x106,122,8x106,2x122,8x106,2x122,18x106,3x122,10x106,122,9x106,122,3x90,122,6x106,122,15x106,122,10x106,122,20x106,122,10x106,122,26x106,68x122,6x106,160x2"]],
-				31,
+				34,
 				686,
 				[
 				],
@@ -24406,7 +24973,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[160, 736, 0, 32, 32, 0, 0, 1, 0.5, 1, 0, 0, []],
-				28,
+				32,
 				690,
 				[
 					["enter your name"],
@@ -24709,7 +25276,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[2304, 704, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				34,
+				37,
 				708,
 				[
 					["World 02"],
@@ -24746,7 +25313,7 @@ cr.getProjectModel = function() { return [
 			[
 				[32, 64, 0, 192, 64, 0, 0, 1, 0, 0, 0, 0, [],
 [6, 2, "12x8"]],
-				31,
+				34,
 				709,
 				[
 				],
@@ -24765,7 +25332,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[32, 64, 0, 192, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				33,
+				36,
 				710,
 				[
 				],
@@ -24816,8 +25383,8 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[0, 0, 0, 2560, 1024, 0, 0, 1, 0, 0, 0, 0, [],
-[80, 32, "153x55,3x63,75x55,3x63,71,4x63,71x55,2x63,6x71,63,63x55,3x63,2x55,63,55,2x63,2x79,71,3x79,71,63,55,3x63,60x55,6x63,2x71,4x79,71,79,71,63,55,71,63,71,63,58x55,2x63,2x79,4x71,7x79,71,63,55,4x71,4x63,22x55,5x63,4x55,6x63,17x55,63,2x71,8x79,3x71,2x63,2x55,3x79,2x71,63,2x71,2x63,19x55,63,4x71,6x63,4x71,3x63,16x55,2x63,4x71,5x79,2x63,4x55,4x79,2x71,79,2x71,63,17x55,2x63,5x71,4x79,3x71,3x79,2x71,3x63,9x55,3x63,4x55,3x63,2x71,2x79,71,63,6x55,8x79,71,63,17x55,63,2x71,5x79,2x71,9x79,3x71,2x63,5x55,2x63,2x71,4x63,4x55,5x63,7x55,71,7x79,71,63,11x55,4x63,2x55,63,2x71,79,2x71,5x63,2x71,5x79,4x71,2x63,6x55,63,5x79,71,2x63,14x55,71,2x79,2x71,79,3x71,63,10x55,63,71,3x63,3x55,63,3x71,63,4x55,3x63,7x71,2x63,8x55,63,71,2x79,71,2x79,2x71,63,13x55,5x71,4x63,11x55,63,79,3x71,63,3x55,4x63,6x55,8x63,10x55,63,2x71,4x79,2x71,63,13x55,63,2x71,2x63,15x55,63,5x79,63,30x55,63,2x71,6x79,63,14x55,3x63,17x55,2x63,2x71,79,71,2x63,29x55,63,4x79,71,79,71,63,36x55,2x63,4x79,4x63,15x55,3x63,8x55,7x63,32x55,6x63,55,63,2x71,79,4x71,2x63,15x55,2x63,43x55,4x63,3x71,2x63,2x55,2x63,2x79,5x71,2x63,12x55,63,2x71,2x63,39x55,3x63,71,2x79,71,2x63,5x55,63,71,5x79,2x71,63,11x55,63,2x71,79,71,63,37x55,3x63,2x71,2x79,2x63,7x55,7x79,3x71,63,9x55,63,71,3x79,2x71,2x63,7x55,9x63,18x55,2x63,2x71,3x79,63,9x55,8x79,2x71,63,9x55,63,71,6x79,3x63,2x55,4x63,2x71,79,3x71,63,71,63,16x55,63,2x71,3x79,2x71,63,8x55,63,8x79,3x71,63,9x55,63,6x79,2x71,3x63,6x71,3x79,3x71,63,16x55,63,71,4x79,71,2x63,7x55,63,71,6x79,71,2x79,3x71,63,8x55,63,3x71,3x79,6x71,79,3x71,5x79,2x71,17x55,63,2x71,3x79,71,63,8x55,63,71,6x79,2x71,2x79,2x71,63,9x55,2x63,19x79,71,63,18x55,63,2x71,2x79,71,63,8x55,63,2x71,9x79,2x71,63,11x55,63,3x71,15x79,71,63,18x55,2x63,4x71,63,8x55,3x63,11x71,63,13x55,63,4x71,5x79,8x71,63,20x55,5x63,10x55,4x63,7x71,2x63,15x55,2x63,3x71,2x79,2x71,6x63,40x55,10x63,18x55,63,4x71,79,63,255x55"]],
-				31,
+[80, 40, "153x55,3x63,75x55,3x63,71,4x63,71x55,2x63,6x71,63,63x55,3x63,2x55,63,55,2x63,2x79,71,3x79,71,63,55,3x63,60x55,6x63,2x71,4x79,71,79,71,63,55,71,63,71,63,58x55,2x63,2x79,4x71,7x79,71,63,55,4x71,4x63,22x55,5x63,4x55,6x63,17x55,63,2x71,8x79,3x71,2x63,2x55,3x79,2x71,63,2x71,2x63,19x55,63,4x71,6x63,4x71,3x63,16x55,2x63,4x71,5x79,2x63,4x55,4x79,2x71,79,2x71,63,17x55,2x63,5x71,4x79,3x71,3x79,2x71,3x63,9x55,3x63,4x55,3x63,2x71,2x79,71,63,6x55,8x79,71,63,17x55,63,2x71,5x79,2x71,9x79,3x71,2x63,5x55,2x63,2x71,4x63,4x55,5x63,7x55,71,7x79,71,63,11x55,4x63,2x55,63,2x71,79,2x71,5x63,2x71,5x79,4x71,2x63,6x55,63,5x79,71,2x63,14x55,71,2x79,2x71,79,3x71,63,10x55,63,71,3x63,3x55,63,3x71,63,4x55,3x63,7x71,2x63,8x55,63,71,2x79,71,2x79,2x71,63,13x55,5x71,4x63,11x55,63,79,3x71,63,3x55,4x63,6x55,8x63,10x55,63,2x71,4x79,2x71,63,13x55,63,2x71,2x63,15x55,63,5x79,63,30x55,63,2x71,6x79,63,14x55,3x63,17x55,2x63,2x71,79,71,2x63,29x55,63,4x79,71,79,71,63,36x55,2x63,4x79,4x63,15x55,3x63,8x55,7x63,32x55,6x63,55,63,2x71,79,4x71,2x63,15x55,2x63,43x55,4x63,3x71,2x63,2x55,2x63,2x79,5x71,2x63,12x55,63,2x71,2x63,39x55,3x63,71,2x79,71,2x63,5x55,63,71,5x79,2x71,63,11x55,63,2x71,79,71,63,37x55,3x63,2x71,2x79,2x63,7x55,7x79,3x71,63,9x55,63,71,3x79,2x71,2x63,7x55,9x63,18x55,2x63,2x71,3x79,63,9x55,8x79,2x71,63,9x55,63,71,6x79,3x63,2x55,4x63,2x71,79,3x71,63,71,63,16x55,63,2x71,3x79,2x71,63,8x55,63,8x79,3x71,63,9x55,63,6x79,2x71,3x63,6x71,3x79,3x71,63,16x55,63,71,4x79,71,2x63,7x55,63,71,6x79,71,2x79,3x71,63,8x55,63,3x71,3x79,6x71,79,3x71,5x79,2x71,17x55,63,2x71,3x79,71,63,8x55,63,71,6x79,2x71,2x79,2x71,63,9x55,2x63,19x79,71,63,18x55,63,2x71,2x79,71,63,8x55,63,2x71,9x79,2x71,63,11x55,63,3x71,15x79,71,63,18x55,2x63,4x71,63,8x55,3x63,11x71,63,13x55,63,4x71,5x79,8x71,63,20x55,5x63,10x55,4x63,7x71,2x63,15x55,2x63,3x71,2x79,2x71,6x63,40x55,10x63,18x55,63,4x71,79,63,255x55,6x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,32x4,2x12,144x4"]],
+				34,
 				56,
 				[
 				],
@@ -24870,7 +25437,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[160, 736, 0, 32, 32, 0, 0, 1, 0.5, 1, 0, 0, []],
-				28,
+				32,
 				60,
 				[
 					["enter your name"],
@@ -24949,7 +25516,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[2304, 704, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				34,
+				37,
 				309,
 				[
 					["World 03"],
@@ -25194,8 +25761,8 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[32, 64, 0, 192, 64, 0, 0, 1, 0, 0, 0, 0, [],
-[6, 2, "12x2"]],
-				31,
+[80, 40, "6x2,74x4,6x2,56x4,5,79x4,5,78x4,2x5,77x4,2x5,78x4,5,76x4,5,2x4,4x5,72x4,12x5,68x4,5,4,3x5,12,5,2x12,4x5,66x4,5,4,3x5,7x12,3x5,64x4,4x5,2x4,2x12,2x4,6x5,46x4,5,17x4,5,4,5,3x4,2x12,4x4,4x5,18x4,5,22x4,5,2x4,5x5,4,5,15x4,5,3x4,2x12,6x4,2x5,14x4,2x5,4,2x5,22x4,11x5,4,5,16x4,2x12,6x4,5,16x4,5,4,5,27x4,8x5,17x4,2x12,6x4,2x5,13x4,6x5,21x4,14x5,4,4x5,11x4,2x12,7x4,5,13x4,9x5,16x4,5x5,12x12,5,3x12,5,10x4,2x12,22x4,7x5,16x4,3x5,4x12,3x5,4x12,3x5,3x12,5,2x12,5,9x4,2x12,21x4,4x5,12,4x5,14x4,2x5,2x12,7x5,4x12,2x4,6x5,2x12,5,8x4,2x12,22x4,2x5,2x12,4,5,4,5,13x4,2x5,12,6x5,3x4,4x12,5x4,7x5,7x4,2x12,22x4,5,4,2x12,3x4,5,12x4,2x5,2x12,5,8x4,4x12,5x4,3x5,4,5,8x4,5,2x12,2x4,5,21x4,2x12,16x4,5,12,6x5,5x4,4x12,6x4,2x5,4,5,7x4,2x5,2x12,3x5,21x4,2x12,16x4,2x5,3x4,5,4,4x5,2x4,4x12,7x4,5,8x4,5,6x12,5,21x4,2x12,16x4,2x5,6x4,12,5,12,2x5,4x12,15x4,3x5,4,2x12,4,5,12,5,20x4,2x12,17x4,5,4x4,5x5,6x12,6x5,13x4,2x12,2x4,2x5,20x4,2x12,21x4,2x5,3x4,3x5,7x12,5,4,5,2x4,2x5,4,2x5,6x4,2x12,3x4,5,20x4,2x12,3x4,2x5,2x4,2x5,20x4,4x12,5,4,2x5,3x4,5x5,7x4,2x12,3x4,5,20x4,2x12,4x4,7x5,9x4,5,8x4,4x12,2x4,3x5,4,2x5,2x12,5,8x4,2x12,24x4,2x12,4x4,7x5,9x4,5,2x4,2x5,4x4,4x12,3x4,5,4,2x5,4,2x12,5,8x4,2x12,24x4,2x12,2x4,3x5,4,2x12,4,2x5,8x4,5x5,5x4,4x12,3x4,5,4x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,4,2x5,8x4,8x5,2x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,2x4,5,8x4,2x5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,12x4,5,4,2x12,4,5,3x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,24x4,2x12,6x4,2x12,14x4,2x12,5x4,4x12,8x4,2x12,9x4,2x12,32x4,2x12,144x4"]],
+				34,
 				310,
 				[
 				],
@@ -25214,7 +25781,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[32, 64, 0, 192, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				33,
+				36,
 				311,
 				[
 				],
@@ -25266,7 +25833,7 @@ cr.getProjectModel = function() { return [
 			[
 				[0, 0, 0, 2464, 2048, 0, 0, 1, 0, 0, 0, 0, [],
 [77, 64, "180x60,3x71,70x60,5x71,79,5x71,65x60,2x71,9x79,71,31x60,2x71,16x60,5x71,11x60,71,9x79,2x71,25x60,4x71,60,2x71,79,16x60,71,79,71,79,3x71,8x60,5x71,5x79,2x71,24x60,3x71,2x79,4x71,79,4x71,11x60,2x71,5x79,71,12x60,7x71,9x60,6x71,10x60,71,12x79,71,11x60,71,6x79,71,27x60,4x71,2x79,6x71,5x60,2x71,2x79,5x71,2x79,3x71,11x60,3x71,79,4x71,26x60,2x71,10x79,71,7x60,3x71,3x60,4x71,14x60,4x71,29x60,71,11x79,71,64x60,71,12x79,71,63x60,3x71,10x79,71,64x60,4x71,79,4x71,2x79,2x71,67x60,3x71,2x60,4x71,448x60,2x4,50x60,3x4,21x60,6x4,16x60,3x4,26x60,3x4,23,3x4,5x60,6x4,7x60,8x4,13x60,6x4,7x60,3x4,13x60,3x4,4x23,60,4,4x60,8x4,3x60,7x4,4x23,4,60,3x4,8x60,2x4,3x23,3x4,4x60,4x4,13x60,4,2x60,4x23,60,4,2x60,6x4,3x23,4,3x60,6x4,5x23,5x4,7x60,2x4,60,4x23,60,2x4,3x60,5x4,15x60,4x23,60,4x4,60,3x4,4x23,2x4,60,7x4,5x23,5x4,5x60,3x4,2x60,4x23,2x60,4,2x60,2x4,3x23,2x4,14x60,4x23,3x60,4,60,3x4,60,4x23,60,4,60,5x4,60,5x23,2x4,3x60,4,10x60,4x23,2x60,4,3x60,4,2x23,3x4,14x60,4,3x23,3x60,4,60,4,3x60,4,3x23,3x60,3x4,3x60,6x23,2x4,2x60,2x4,9x60,4x23,2x60,4,2x60,2x4,3x23,2x4,14x60,4,3x23,8x60,4,4x23,2x60,3x4,4x60,6x23,60,2x4,2x60,2x4,8x60,4x23,5x60,4,60,3x23,60,2x4,12x60,2x4,3x23,7x60,2x4,4x23,2x60,4,6x60,6x23,2x60,4,3x60,4,8x60,4x23,7x60,3x23,60,2x4,11x60,2x4,4x23,7x60,4,60,4x23,9x60,6x23,15x60,4x23,7x60,3x23,60,4,12x60,4,60,3x23,2x4,5x60,2x4,60,4x23,9x60,6x23,12x60,4x4,3x23,7x60,3x23,13x60,2x4,60,4x23,2x4,3x60,2x4,2x60,4,23,4,23,9x60,2x4,4x23,11x60,2x4,2x60,4x23,7x60,3x23,13x60,4,2x60,4x23,60,4,6x60,2x4,23,4x4,6x60,2x4,5x23,8x60,4x4,3x60,4x23,7x60,3x23,16x60,4x23,7x60,4,60,4x23,60,4,6x60,4,4x23,2x4,15x60,4x23,4,6x60,3x23,16x60,4x23,6x60,4,2x60,4x23,60,2x4,4x60,4,60,5x23,2x4,14x60,4x23,2x4,5x60,3x23,16x60,4x23,5x60,2x4,2x60,3x23,4,7x60,4,60,6x23,2x4,13x60,3x23,3x4,4x60,2x4,2x23,4,15x60,4,3x23,4x60,2x4,3x60,4,2x23,3x4,4x60,2x4,60,6x23,60,4,13x60,4x23,60,2x4,3x60,4,3x23,2x4,14x60,4,3x23,4x60,4,4x60,2x4,2x23,60,2x4,2x60,3x4,60,6x23,60,4,13x60,4x23,6x60,4,3x23,60,2x4,12x60,2x4,3x23,4x60,4,4x60,23,4,2x23,5x60,4,3x60,6x23,60,4,13x60,4x23,6x60,4,3x23,2x60,4,11x60,2x4,2x23,4,23,9x60,23,2x4,23,5x60,4,3x60,6x23,60,2x4,10x60,3x4,3x23,5x60,2x4,3x23,2x60,4,11x60,4,60,3x23,4,9x60,23,3x4,4x60,4,4x60,6x23,2x60,2x4,11x60,4x23,4x60,2x4,60,3x23,16x60,3x23,2x4,8x60,2x4,23,4,4x60,4,4x60,6x23,3x60,2x4,10x60,4x23,7x60,3x23,16x60,4x23,2x4,7x60,4,2x23,4,4x60,4,4x60,6x23,15x60,4x23,7x60,2x23,2x4,15x60,4x23,60,2x4,5x60,4,3x23,2x4,8x60,2x4,4x23,15x60,4x23,7x60,3x23,2x4,14x60,4x23,6x60,3x4,4x23,4,7x60,2x4,5x23,15x60,4x23,7x60,3x23,60,2x4,13x60,4,3x23,6x60,4,2x60,4x23,4,7x60,2x4,3x23,4,23,15x60,4x23,7x60,3x23,2x60,4,12x60,2x4,3x23,9x60,23,2x4,23,4,6x60,2x4,4x23,2x4,15x60,4x23,7x60,4,2x23,13x60,3x4,4x23,8x60,3x4,2x23,4,7x60,4,5x23,3x4,13x60,4x23,6x60,2x4,2x23,16x60,4x23,7x60,2x4,4x23,4,6x60,2x4,6x23,3x4,12x60,4,3x23,5x60,2x4,3x23,16x60,4x23,7x60,4,60,4x23,7x60,4,60,6x23,2x60,2x4,10x60,2x4,3x23,5x60,4,60,3x23,16x60,4x23,9x60,4x23,6x60,2x4,60,6x23,3x60,4,9x60,4,60,4x23,4x60,2x4,60,2x23,2x4,15x60,4x23,9x60,4x23,6x60,2x4,60,6x23,3x60,2x4,6x60,3x4,60,4x23,4x60,4,2x60,3x23,3x4,13x60,4x23,9x60,4x23,5x60,2x4,2x60,6x23,15x60,4x23,7x60,3x23,2x60,4,13x60,4x23,9x60,4x23,5x60,4,3x60,6x23,15x60,4x23,7x60,3x23,16x60,4x23,9x60,4x23,9x60,6x23,15x60,4x23,7x60,3x23,16x60,4x23,9x60,4x23,9x60,6x23,15x60,4x23,7x60,3x23,16x60,4x23,9x60,4x23,9x60,6x23,15x60,4x23,7x60,3x23,16x60,4x23,9x60,4x23,9x60,6x23,15x60,4x23,7x60,3x23,16x60,4x23,9x60,4x23,9x60,6x23,15x60,4x23,7x60,3x23,16x60,4x23,9x60,4x23,9x60,6x23,15x60,4x23,7x60,3x23,16x60,4x23,9x60,4x23,9x60,6x23,15x60,4x23,7x60,3x23,16x60,4x23,9x60,4x23,9x60,6x23,15x60,4x23,7x60,3x23,16x60,4x23,9x60,4x23,9x60,6x23,15x60,4x23,7x60,3x23,5x60"]],
-				31,
+				34,
 				35,
 				[
 				],
@@ -25735,7 +26302,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[128, 1888, 0, 96, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				84,
 				[
 				],
@@ -25755,7 +26322,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[2304, 672, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				85,
 				[
 				],
@@ -25775,7 +26342,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[192, 672, 0, 32, 32, 0, 0, 1, 0.5, 1, 0, 0, []],
-				28,
+				32,
 				86,
 				[
 					["enter your name"],
@@ -25805,28 +26372,8 @@ cr.getProjectModel = function() { return [
 				]
 			]
 ,			[
-				[1952, 736, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
-				266,
-				[
-					["Level 01_03"],
-					[1],
-					[3],
-					[0],
-					[0]
-				],
-				[
-				[
-				]
-				],
-				[
-					0,
-					0
-				]
-			]
-,			[
 				[1920, 768, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				270,
 				[
 				],
@@ -25846,7 +26393,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[2208, 1440, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				51,
 				[
 				],
@@ -25921,26 +26468,6 @@ cr.getProjectModel = function() { return [
 				[
 				[
 					1
-				]
-				],
-				[
-					0,
-					0
-				]
-			]
-,			[
-				[128, 832, 0, 96, 96, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
-				423,
-				[
-					["Overworld"],
-					[1],
-					[0],
-					[0],
-					[0]
-				],
-				[
-				[
 				]
 				],
 				[
@@ -26110,14 +26637,14 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[416, 1216, 0, 192, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				434,
 				[
 				],
 				[
 				],
 				[
-					"Jungle - Secret Level",
+					"Jungle - Secret Level 2",
 					0,
 					"8pt Arial",
 					"rgb(255,255,255)",
@@ -26258,7 +26785,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[32, 864, 0, 96, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				40,
 				[
 				],
@@ -26278,7 +26805,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[1216, 800, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				42,
 				[
 				],
@@ -26313,7 +26840,7 @@ cr.getProjectModel = function() { return [
 				]
 			]
 ,			[
-				[352, 512, 0, 640, 32, 0, 0, 1, 0, 0, 0, 0, []],
+				[352, 512, 0, 1344, 32, 0, 0, 1, 0, 0, 0, 0, []],
 				0,
 				445,
 				[
@@ -26346,14 +26873,14 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[128, 288, 0, 192, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				45,
 				[
 				],
 				[
 				],
 				[
-					"Jungle - Secret Level 2",
+					"Jungle - Secret Level 1",
 					0,
 					"8pt Arial",
 					"rgb(255,255,255)",
@@ -26580,7 +27107,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[1728, 672, 0, 160, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				457,
 				[
 				],
@@ -26599,8 +27126,8 @@ cr.getProjectModel = function() { return [
 				]
 			]
 ,			[
-				[256, 1600, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				[1216, 1344, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
+				33,
 				52,
 				[
 				],
@@ -26650,6 +27177,155 @@ cr.getProjectModel = function() { return [
 					1
 				]
 			]
+,			[
+				[1952, 736, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
+				35,
+				266,
+				[
+					["Level 01_03"],
+					[1],
+					[3],
+					[2100],
+					[760]
+				],
+				[
+				[
+				]
+				],
+				[
+					0,
+					0
+				]
+			]
+,			[
+				[128, 832, 0, 96, 96, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
+				35,
+				423,
+				[
+					["Overworld"],
+					[1],
+					[0],
+					[0],
+					[0]
+				],
+				[
+				[
+				]
+				],
+				[
+					0,
+					0
+				]
+			]
+,			[
+				[2240, 1792, 0, 192, 32, 0, 0, 1, 0, 0, 0, 0, []],
+				33,
+				718,
+				[
+				],
+				[
+				],
+				[
+					"Jungle - Secret Level 3",
+					0,
+					"8pt Arial",
+					"rgb(255,255,255)",
+					1,
+					1,
+					0,
+					0,
+					0
+				]
+			]
+,			[
+				[160, 1600, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
+				33,
+				719,
+				[
+				],
+				[
+				],
+				[
+					"Jungle - Level 6",
+					0,
+					"8pt Arial",
+					"rgb(255,255,255)",
+					1,
+					1,
+					0,
+					0,
+					0
+				]
+			]
+,			[
+				[288, 448, 0, 384, 64, 0, 0, 1, 0, 0, 0, 0, []],
+				0,
+				720,
+				[
+				],
+				[
+				[
+					1
+				]
+				],
+				[
+					0,
+					0
+				]
+			]
+,			[
+				[2304, 1984, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
+				33,
+				721,
+				[
+				],
+				[
+				],
+				[
+					"Jungle - Level 7",
+					0,
+					"8pt Arial",
+					"rgb(255,255,255)",
+					1,
+					1,
+					0,
+					0,
+					0
+				]
+			]
+,			[
+				[1792, 640, 0, 64, 64, 0, 0, 1, 0.5, 0.5, 0, 0, []],
+				21,
+				722,
+				[
+					["Some walls or platforms may disappear once you've completed a level. PROBABLY NOT ANY OF THE ONES NEAR THIS SIGN THOUGH."]
+				],
+				[
+				],
+				[
+					0,
+					"Default",
+					0,
+					1
+				]
+			]
+,			[
+				[1600, 736, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
+				4,
+				723,
+				[
+					["01-02"]
+				],
+				[
+				[
+					1
+				]
+				],
+				[
+					0,
+					0
+				]
+			]
 			],
 			[			]
 		]
@@ -26669,8 +27345,25 @@ cr.getProjectModel = function() { return [
 			0,
 			[
 			[
+				[1824, 0, 0, 64, 672, 0, 0, 1, 0, 0, 0, 0, []],
+				4,
+				712,
+				[
+					["01-02"]
+				],
+				[
+				[
+					1
+				]
+				],
+				[
+					0,
+					0
+				]
+			]
+,			[
 				[1248, 736, 0, 64, 64, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				89,
 				[
 					["Level 01_01"],
@@ -26690,7 +27383,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[2336, 640, 0, 96, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				90,
 				[
 					["Level 01_02"],
@@ -26710,7 +27403,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[128, 1920, 0, 96, 64, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				99,
 				[
 					["Overworld"],
@@ -26721,23 +27414,6 @@ cr.getProjectModel = function() { return [
 				],
 				[
 				[
-				]
-				],
-				[
-					0,
-					0
-				]
-			]
-,			[
-				[1824, 480, 0, 64, 192, 0, 0, 1, 0, 0, 0, 0, []],
-				4,
-				712,
-				[
-					["01-02"]
-				],
-				[
-				[
-					1
 				]
 				],
 				[
@@ -26796,8 +27472,8 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[0, 0, 0, 3584, 2560, 0, 0, 1, 0, 0, 0, 0, [],
-[112, 80, "783x114,39,108x114,4x39,105x114,5x39,2x47,101x114,5x39,6x47,99x114,3x39,10x47,96x114,3x39,13x47,93x114,4x39,6x47,2x39,7x47,92x114,39,9x47,2x39,8x47,85x114,8x39,7x47,3x39,9x47,81x114,5x39,9x47,6x39,11x47,80x114,5x39,27x47,80x114,2x39,30x47,80x114,39,31x47,79x114,2x39,31x47,78x114,2x39,32x47,76x114,3x39,33x47,75x114,2x39,35x47,72x114,4x39,36x47,71x114,2x39,39x47,70x114,39,41x47,67x114,3x39,42x47,66x114,2x39,44x47,64x114,3x39,45x47,63x114,2x39,47x47,61x114,2x39,49x47,59x114,3x39,29x47,2x39,19x47,56x114,4x39,30x47,6x39,16x47,54x114,3x39,31x47,3x39,4x47,2x39,15x47,53x114,2x39,32x47,2x39,7x47,39,15x47,52x114,2x39,33x47,39,8x47,2x39,14x47,51x114,2x39,34x47,39,9x47,2x39,13x47,50x114,2x39,34x47,2x39,10x47,2x39,12x47,48x114,2x39,36x47,39,12x47,2x39,11x47,47x114,2x39,36x47,2x39,13x47,2x39,10x47,46x114,2x39,36x47,2x39,15x47,3x39,8x47,45x114,2x39,36x47,2x39,19x47,2x39,6x47,44x114,2x39,36x47,2x39,21x47,2x39,5x47,43x114,2x39,37x47,39,23x47,2x39,4x47,43x114,2x39,36x47,2x39,24x47,2x39,3x47,43x114,39,37x47,39,26x47,2x39,2x47,43x114,39,35x47,3x39,27x47,2x39,47,42x114,39,33x47,4x39,30x47,2x39,42x114,39,33x47,39,34x47,39,42x114,39,33x47,39,35x47,42x114,39,32x47,2x39,35x47,41x114,2x39,16x47,2x39,4x47,39,9x47,39,36x47,41x114,39,4x47,4x39,7x47,10x39,8x47,39,36x47,40x114,2x39,3x47,2x39,2x47,5x39,2x47,2x39,8x47,39,8x47,39,36x47,40x114,39,3x47,2x39,8x47,3x39,9x47,39,7x47,2x39,36x47,2x39,37x114,2x39,2x47,2x39,21x47,2x39,5x47,2x39,38x47,39,37x114,39,2x47,2x39,23x47,39,4x47,2x39,40x47,39,36x114,39,47,2x39,24x47,2x39,2x47,39,42x47,3x39,33x114,4x39,26x47,3x39,45x47,39,33x114,3x39,27x47,3x39,46x47,2x39,31x114,2x39,29x47,39,48x47,2x39,28x114,3x39,31x47,39,48x47,2x39,27x114,39,33x47,2x39,49x47,39,25x114,39,35x47,2x39,49x47,39,24x114,39,36x47,2x39,49x47,2x39,22x114,39,37x47,39,50x47,39,22x114,39,37x47,39,37x47,39,12x47,39,22x114,39,37x47,2x39,35x47,2x39,12x47,39,22x114,39,38x47,39,34x47,39,15x47,2x39,20x114,39,38x47,39,33x47,2x39,16x47,39,19x114,2x39,38x47,39,32x47,2x39,18x47,2x39,15x114,3x39,39x47,39,31x47,2x39,20x47,2x39,12x114,3x39,41x47,2x39,27x47,4x39,23x47,39,10x114,2x39,44x47,39,27x47,39,27x47,39,8x114,2x39,45x47,2x39,25x47,39,28x47,2x39,6x114,39,48x47,39,24x47,2x39,29x47,3x39,3x114,2x39,48x47,39,23x47,2x39,32x47,2x39,114,2x39,49x47,2x39,21x47,2x39,34x47,3x39,51x47,39,20x47,2x39,35x47,2x39,52x47,2x39,18x47,2x39,13x47"]],
-				31,
+[119, 101, "112x114,7x-1,112x114,7x-1,112x114,7x-1,112x114,7x-1,112x114,7x-1,112x114,7x-1,111x114,39,7x-1,108x114,4x39,7x-1,105x114,5x39,2x47,7x-1,101x114,5x39,6x47,7x-1,99x114,3x39,10x47,7x-1,96x114,3x39,13x47,7x-1,93x114,4x39,6x47,2x39,7x47,7x-1,92x114,39,9x47,2x39,8x47,7x-1,85x114,8x39,7x47,3x39,9x47,7x-1,81x114,5x39,9x47,6x39,11x47,7x-1,80x114,5x39,27x47,7x-1,80x114,2x39,30x47,7x-1,80x114,39,31x47,7x-1,79x114,2x39,31x47,7x-1,78x114,2x39,32x47,7x-1,76x114,3x39,33x47,7x-1,75x114,2x39,35x47,7x-1,72x114,4x39,36x47,7x-1,71x114,2x39,39x47,7x-1,70x114,39,41x47,7x-1,67x114,3x39,42x47,7x-1,66x114,2x39,44x47,7x-1,64x114,3x39,45x47,7x-1,63x114,2x39,47x47,7x-1,61x114,2x39,49x47,7x-1,59x114,3x39,29x47,2x39,19x47,7x-1,56x114,4x39,30x47,6x39,16x47,7x-1,54x114,3x39,31x47,3x39,4x47,2x39,15x47,7x-1,53x114,2x39,32x47,2x39,7x47,39,15x47,7x-1,52x114,2x39,33x47,39,8x47,2x39,14x47,7x-1,51x114,2x39,34x47,39,9x47,2x39,13x47,7x-1,50x114,2x39,34x47,2x39,10x47,2x39,12x47,7x-1,48x114,2x39,36x47,39,12x47,2x39,11x47,7x-1,47x114,2x39,36x47,2x39,13x47,2x39,10x47,7x-1,46x114,2x39,36x47,2x39,15x47,3x39,8x47,7x-1,45x114,2x39,36x47,2x39,19x47,2x39,6x47,7x-1,44x114,2x39,36x47,2x39,21x47,2x39,5x47,7x-1,43x114,2x39,37x47,39,23x47,2x39,4x47,7x-1,43x114,2x39,36x47,2x39,24x47,2x39,3x47,7x-1,43x114,39,37x47,39,26x47,2x39,2x47,7x-1,43x114,39,35x47,3x39,27x47,2x39,47,7x-1,42x114,39,33x47,4x39,30x47,2x39,7x-1,42x114,39,33x47,39,34x47,39,7x-1,42x114,39,33x47,39,35x47,7x-1,42x114,39,32x47,2x39,35x47,7x-1,41x114,2x39,16x47,2x39,4x47,39,9x47,39,36x47,7x-1,41x114,39,4x47,4x39,7x47,10x39,8x47,39,36x47,7x-1,40x114,2x39,3x47,2x39,2x47,5x39,2x47,2x39,8x47,39,8x47,39,36x47,7x-1,40x114,39,3x47,2x39,8x47,3x39,9x47,39,7x47,2x39,36x47,7x-1,2x39,37x114,2x39,2x47,2x39,21x47,2x39,5x47,2x39,37x47,7x-1,47,39,37x114,39,2x47,2x39,23x47,39,4x47,2x39,38x47,7x-1,2x47,39,36x114,39,47,2x39,24x47,2x39,2x47,39,40x47,7x-1,2x47,3x39,33x114,4x39,26x47,3x39,41x47,7x-1,4x47,39,33x114,3x39,27x47,3x39,41x47,7x-1,5x47,2x39,31x114,2x39,29x47,39,42x47,7x-1,6x47,2x39,28x114,3x39,31x47,39,41x47,7x-1,7x47,2x39,27x114,39,33x47,2x39,40x47,7x-1,9x47,39,25x114,39,35x47,2x39,39x47,7x-1,10x47,39,24x114,39,36x47,2x39,38x47,7x-1,11x47,2x39,22x114,39,37x47,39,38x47,7x-1,12x47,39,22x114,39,37x47,39,37x47,39,7x-1,12x47,39,22x114,39,37x47,2x39,35x47,2x39,7x-1,12x47,39,22x114,39,38x47,39,34x47,39,2x47,7x-1,13x47,2x39,20x114,39,38x47,39,33x47,2x39,2x47,7x-1,14x47,39,19x114,2x39,38x47,39,32x47,2x39,3x47,7x-1,15x47,2x39,15x114,3x39,39x47,39,31x47,2x39,4x47,7x-1,16x47,2x39,12x114,3x39,41x47,2x39,27x47,4x39,5x47,7x-1,18x47,39,10x114,2x39,44x47,39,27x47,39,8x47,7x-1,19x47,39,8x114,2x39,45x47,2x39,25x47,39,9x47,7x-1,19x47,2x39,6x114,39,48x47,39,24x47,2x39,9x47,7x-1,20x47,3x39,3x114,2x39,48x47,39,23x47,2x39,10x47,7x-1,22x47,2x39,114,2x39,49x47,2x39,21x47,2x39,11x47,7x-1,23x47,3x39,51x47,39,20x47,2x39,12x47,7x-1,23x47,2x39,52x47,2x39,18x47,2x39,13x47,2506x-1"]],
+				34,
 				19,
 				[
 				],
@@ -26834,7 +27510,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[128, 2208, 0, 64, 96, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				135,
 				[
 					["Level 02_01"],
@@ -26870,7 +27546,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[1888, 2432, 0, 64, 64, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				155,
 				[
 					["Level 01_01"],
@@ -26890,7 +27566,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[288, 2208, 0, 32, 32, 0, 0, 1, 0.5, 1, 0, 0, []],
-				28,
+				32,
 				157,
 				[
 					["enter your name"],
@@ -26921,7 +27597,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[3104, 2432, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				172,
 				[
 					["Menu Layout"],
@@ -26941,7 +27617,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[1792, 2304, 0, 64, 64, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				175,
 				[
 					["Level 01_01"],
@@ -26961,7 +27637,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[64, 2336, 0, 96, 64, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				211,
 				[
 					["Overworld"],
@@ -27685,7 +28361,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[3456, 1888, 0, 64, 160, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				473,
 				[
 					["Menu Layout"],
@@ -27705,7 +28381,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[3360, 1856, 0, 192, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				474,
 				[
 				],
@@ -27805,7 +28481,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[160, 1760, 0, 352, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				480,
 				[
 				],
@@ -28081,7 +28757,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[3392, 1120, 0, 192, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				496,
 				[
 				],
@@ -28133,7 +28809,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[2496, 640, 0, 192, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				499,
 				[
 				],
@@ -28379,7 +29055,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[1728, 2176, 0, 160, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				149,
 				[
 				],
@@ -28399,7 +29075,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[64, 2400, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				91,
 				[
 				],
@@ -28419,7 +29095,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[0, 2240, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				92,
 				[
 				],
@@ -28452,7 +29128,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[3072, 2464, 0, 192, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				156,
 				[
 				],
@@ -28485,7 +29161,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[1760, 2144, 0, 96, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				139,
 				[
 					["Level 01_01"],
@@ -28505,7 +29181,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[1792, 2496, 0, 352, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				443,
 				[
 				],
@@ -28557,7 +29233,7 @@ cr.getProjectModel = function() { return [
 			[
 				[0, 0, 0, 5760, 2560, 0, 0, 1, 0, 0, 0, 0, [],
 [181, 80, "180x60,-1,93x60,3x63,84x60,-1,90x60,2x63,4x71,4x63,80x60,-1,8x60,3x63,57x60,7x63,13x60,2x63,3x71,2x79,5x71,2x63,78x60,-1,7x60,63,2x71,63,56x60,63,6x71,5x63,7x60,2x63,3x71,9x79,2x71,78x60,-1,6x60,63,3x71,63,55x60,2x63,71,4x79,5x71,3x63,3x60,3x63,2x71,11x79,2x71,78x60,-1,5x60,2x63,71,79,71,63,42x60,4x63,9x60,63,2x71,8x79,11x71,12x79,2x71,78x60,-1,4x60,63,3x71,79,71,63,20x60,6x63,13x60,3x63,4x71,2x63,6x60,63,2x71,13x79,71,18x79,2x71,30x60,3x63,45x60,-1,3x60,3x71,2x79,2x71,63,18x60,2x63,8x71,63,71,2x63,6x60,63,4x71,3x79,3x71,2x63,3x60,63,71,13x79,2x71,17x79,2x71,63,28x60,3x63,71,4x63,42x60,-1,3x60,71,4x79,71,2x63,17x60,63,3x71,6x79,5x71,63,4x60,63,2x71,8x79,8x71,32x79,71,63,29x60,63,6x71,63,42x60,-1,3x60,2x71,79,63,2x71,63,16x60,2x63,2x71,11x79,3x71,3x63,3x71,10x79,2x71,37x79,71,63,28x60,2x63,71,3x79,71,2x63,8x60,4x63,9x60,9x63,12x60,-1,3x60,63,4x71,63,13x60,4x63,3x71,14x79,5x71,31x79,5x71,2x79,3x71,9x79,2x71,63,17x60,7x63,2x60,3x63,2x71,79,3x71,63,8x60,2x63,4x71,2x63,4x71,3x63,7x71,4x63,9x60,-1,4x60,5x63,11x60,2x63,5x71,52x79,71,3x63,3x71,2x63,3x71,6x79,2x71,2x63,15x60,2x63,7x71,3x63,3x71,2x79,71,2x63,8x60,63,3x71,2x79,4x71,2x79,5x71,5x79,4x71,2x63,8x60,-1,19x60,63,3x71,56x79,71,63,7x60,2x63,8x71,2x63,15x60,2x63,3x71,79,8x71,3x79,2x71,63,8x60,2x63,2x71,22x79,2x71,63,8x60,-1,19x60,63,71,58x79,71,63,9x60,8x63,15x60,2x63,3x71,7x79,71,5x79,2x71,63,9x60,4x71,23x79,71,63,8x60,-1,19x60,63,71,58x79,71,63,29x60,3x63,3x71,11x79,2x71,79,2x71,2x63,8x60,2x63,2x71,24x79,71,63,8x60,-1,19x60,63,71,13x79,4x71,40x79,2x71,63,15x60,15x63,3x71,10x79,7x71,63,10x60,63,2x71,9x79,4x71,11x79,2x71,63,8x60,-1,19x60,63,71,12x79,5x71,40x79,71,2x63,14x60,2x63,15x71,4x79,9x71,4x63,13x60,2x71,8x79,3x71,63,2x71,11x79,71,2x63,8x60,-1,19x60,2x71,12x79,2x71,2x63,3x71,30x79,2x71,3x79,4x71,63,14x60,2x63,2x71,15x79,4x71,9x63,15x60,63,71,8x79,3x71,2x63,2x71,8x79,4x71,63,9x60,-1,19x60,71,13x79,71,5x63,2x71,25x79,2x71,2x79,6x71,3x63,15x60,63,3x71,14x79,2x71,2x63,25x60,63,71,7x79,2x71,3x63,2x71,8x79,2x71,3x63,10x60,-1,9x60,2x63,4x71,5x63,71,10x79,3x71,6x63,2x71,23x79,6x71,6x63,17x60,2x63,3x71,10x79,4x71,63,27x60,63,71,7x79,2x71,63,3x71,5x79,5x71,63,13x60,-1,9x60,63,2x71,2x79,7x71,10x79,3x71,63,2x60,4x63,7x71,14x79,4x71,6x63,23x60,2x63,6x71,5x79,2x71,3x63,28x60,63,71,8x79,71,5x79,5x71,3x63,15x60,-1,9x60,63,71,20x79,3x71,63,5x60,7x63,2x71,12x79,3x71,3x63,31x60,3x63,8x71,2x63,30x60,63,71,13x79,71,63,2x71,2x63,18x60,-1,9x60,63,2x71,19x79,3x71,63,12x60,2x63,71,11x79,71,2x63,36x60,9x63,31x60,2x63,71,13x79,2x71,22x60,-1,10x60,63,2x71,18x79,3x71,63,13x60,63,2x71,10x79,71,3x63,74x60,63,3x71,14x79,71,22x60,-1,10x60,2x63,2x71,17x79,3x71,2x63,12x60,63,2x71,10x79,2x71,2x63,71x60,4x63,71,16x79,71,22x60,-1,11x60,2x63,8x71,11x79,71,8x63,7x60,63,71,11x79,2x71,63,70x60,2x63,5x71,16x79,71,22x60,-1,13x60,7x63,4x71,8x79,2x71,2x63,4x71,63,7x60,63,71,11x79,71,63,72x60,2x63,3x71,16x79,2x71,22x60,-1,20x60,3x63,2x71,8x79,4x71,2x79,71,63,7x60,63,71,11x79,71,63,74x60,2x63,3x71,14x79,71,63,22x60,-1,24x60,71,14x79,71,63,6x60,2x63,71,11x79,71,63,20x60,2x63,5x71,4x63,45x60,2x63,3x71,4x79,4x71,3x79,2x71,63,22x60,-1,23x60,63,2x71,13x79,71,63,5x60,2x63,2x71,11x79,71,63,16x60,4x63,3x71,3x79,4x71,9x63,39x60,3x63,4x71,3x63,5x71,2x63,22x60,-1,20x60,2x63,4x71,13x79,71,63,5x60,63,2x71,11x79,2x71,63,14x60,2x63,2x71,11x79,2x63,79,7x71,8x63,71,2x63,43x60,63,23x60,-1,19x60,63,3x71,16x79,71,63,5x60,63,71,12x79,71,63,15x60,63,71,22x79,11x71,2x63,12x60,43,53x60,-1,19x60,63,3x71,16x79,71,6x60,63,2x71,11x79,71,63,15x60,2x63,6x71,25x79,3x71,63,12x60,51,53x60,-1,20x60,2x63,2x71,15x79,71,7x60,63,3x71,8x79,2x71,63,18x60,4x63,14x71,79,12x71,3x63,66x60,-1,22x60,2x63,3x71,10x79,2x71,63,8x60,2x63,71,8x79,71,63,23x60,4x63,2x71,8x63,71,12x63,69x60,-1,24x60,2x63,6x71,3x79,4x71,63,9x60,63,8x79,2x71,63,119x60,-1,26x60,5x63,5x71,3x63,10x60,2x63,3x71,4x79,71,2x63,119x60,-1,32x60,4x63,15x60,2x63,6x71,63,120x60,-1,53x60,7x63,76x60,3x63,41x60,-1,133x60,4x63,71,5x63,37x60,-1,131x60,3x63,9x71,63,6x60,5x63,25x60,-1,130x60,63,4x71,7x79,71,8x63,3x71,2x63,24x60,-1,16x60,6x63,106x60,2x63,2x71,9x79,2x71,3x63,6x71,79,2x71,3x63,22x60,-1,15x60,2x63,71,3x63,107x60,63,3x71,7x79,3x71,2x63,3x71,2x63,2x71,3x79,3x71,2x63,21x60,-1,15x60,63,2x71,63,79x60,5x63,24x60,2x63,71,7x79,3x71,10x63,7x71,2x63,21x60,-1,13x60,63,4x71,63,74x60,2x63,8x71,3x63,71,2x63,18x60,3x63,8x71,3x63,10x60,7x63,22x60,-1,12x60,63,2x71,2x79,71,63,72x60,3x63,71,7x79,6x71,2x63,20x60,9x63,41x60,-1,12x60,63,71,3x79,71,63,19x60,2x63,2x71,4x63,41x60,4x63,3x71,13x79,2x71,63,70x60,-1,12x60,63,5x71,63,18x60,63,3x71,79,4x71,6x63,3x71,27x60,5x63,12x71,9x79,71,63,70x60,-1,13x60,5x63,18x60,63,3x71,5x79,11x71,25x60,63,6x71,2x79,2x71,6x63,71,9x79,71,63,70x60,-1,36x60,63,2x71,15x79,2x71,63,24x60,63,71,7x79,71,63,5x60,63,2x71,5x79,4x71,71x60,-1,36x60,63,71,17x79,71,63,24x60,63,71,6x79,2x71,7x60,63,2x71,3x79,3x71,2x63,71x60,-1,36x60,63,4x71,14x79,71,63,24x60,63,5x71,2x79,71,63,7x60,2x63,6x71,2x63,72x60,-1,37x60,3x63,3x71,10x79,2x71,63,25x60,5x63,3x71,2x63,8x60,8x63,3x60,4x63,66x60,-1,40x60,2x63,3x71,7x79,2x71,2x63,29x60,5x63,18x60,3x63,3x71,4x63,62x60,-1,42x60,2x63,4x71,2x79,3x71,63,54x60,63,3x71,79,6x71,2x63,32x60,6x63,21x60,-1,44x60,9x63,55x60,63,71,8x79,4x71,63,26x60,4x63,5x71,5x63,17x60,-1,108x60,63,71,11x79,71,2x63,23x60,63,6x71,3x63,3x71,4x63,16x60,-1,108x60,63,3x71,10x79,2x71,63,21x60,2x63,4x71,2x63,9x71,3x63,14x60,-1,109x60,63,2x71,11x79,71,2x63,19x60,2x63,4x71,2x63,2x71,3x79,6x71,4x63,12x60,-1,109x60,2x63,71,11x79,3x71,63,17x60,2x63,4x71,2x63,3x71,7x79,4x71,3x63,11x60,-1,111x60,63,3x71,10x79,2x71,63,16x60,63,4x71,2x63,2x71,9x79,6x71,63,11x60,-1,14x60,22x63,7x60,4x71,4x63,60x60,3x63,2x71,10x79,3x71,63,14x60,2x63,3x71,63,2x71,13x79,3x71,2x63,10x60,-1,13x60,2x63,5x71,3x79,6x71,2x79,4x71,4x63,71,63,2x60,7x71,2x63,61x60,2x63,3x71,10x79,2x71,2x63,13x60,3x63,2x71,63,2x71,15x79,3x63,9x60,-1,12x60,2x63,2x71,19x79,6x71,2x63,71,2x63,2x79,4x71,62x60,3x63,71,11x79,2x71,4x63,12x60,2x63,2x71,63,2x71,14x79,71,2x63,9x60,-1,10x60,2x63,71,25x79,6x71,6x79,2x71,28x60,2x63,2x71,3x63,29x60,63,2x71,11x79,4x71,2x63,12x60,63,3x71,63,2x71,13x79,2x71,63,9x60,-1,9x60,2x63,71,38x79,71,63,25x60,2x63,9x71,8x63,5x60,5x63,5x71,5x63,2x71,15x79,3x71,63,12x60,63,3x71,2x63,2x71,12x79,71,2x63,8x60,-1,7x60,2x63,2x71,11x79,3x71,25x79,71,63,22x60,4x63,2x71,7x79,9x71,4x63,7x71,3x79,7x71,17x79,2x71,63,13x60,63,5x71,63,71,11x79,2x71,63,8x60,-1,7x60,63,2x71,9x79,2x71,3x63,71,25x79,71,21x60,2x63,5x71,14x79,13x71,29x79,2x71,63,12x60,5x63,2x71,63,71,11x79,3x71,7x60,-1,6x60,63,71,10x79,2x71,63,4x71,24x79,2x71,21x60,63,2x71,61x79,71,63,16x60,63,2x71,63,71,10x79,71,63,3x71,63,5x60,-1,5x60,63,2x71,27x79,4x71,10x79,71,63,21x60,63,2x71,61x79,2x71,63,16x60,2x63,2x71,10x79,71,63,4x71,63,4x60,-1,4x60,2x63,2x71,25x79,3x71,2x63,4x71,7x79,71,63,21x60,2x63,4x71,58x79,2x71,63,15x60,2x63,3x71,10x79,71,63,5x71,63,3x60,-1,4x60,2x63,2x71,79,60,21x79,3x71,63,2x60,4x63,3x71,4x79,2x71,63,23x60,3x63,2x71,43x79,6x71,8x79,71,2x63,16x60,63,6x71,6x79,71,63,4x71,63,2x71,63,2x60,-1,5x60,2x63,4x71,10x79,11x71,2x63,7x60,3x63,6x71,26x60,2x63,4x71,39x79,2x71,4x63,3x71,5x79,2x71,63,17x60,63,71,4x63,2x71,5x79,71,63,71,2x79,2x71,63,2x71,2x63,-1,6x60,3x63,4x71,79,8x71,11x63,12x60,4x63,29x60,3x63,9x71,4x79,4x71,21x79,3x71,63,3x60,3x63,4x71,79,2x71,63,18x60,63,4x71,2x63,3x71,79,2x71,63,2x71,3x79,6x71,-1,9x60,3x63,3x71,8x63,58x60,8x63,6x71,2x63,5x71,15x79,3x71,63,7x60,4x63,3x71,2x63,18x60,63,5x71,3x63,3x71,63,2x71,7x79,71,63,71,-1,13x60,63,71,82x60,3x63,6x71,8x79,4x71,2x63,12x60,4x63,19x60,2x63,6x71,5x63,71,9x79,2x71,-1,100x60,5x63,3x71,5x79,2x71,3x63,38x60,2x63,12x71,79,2x71,5x79,2x71,-1,105x60,2x63,7x71,63,42x60,3x63,4x71,2x63,2x71,63,11x71,-1"]],
-				31,
+				34,
 				314,
 				[
 				],
@@ -28594,7 +29270,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[896, 2272, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				325,
 				[
 					["Level 03_01"],
@@ -28614,7 +29290,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[320, 2208, 0, 32, 32, 0, 0, 1, 0.5, 1, 0, 0, []],
-				28,
+				32,
 				347,
 				[
 					["enter your name"],
@@ -28645,7 +29321,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[96, 2368, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				356,
 				[
 					["Overworld"],
@@ -28713,7 +29389,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[64, 2400, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				360,
 				[
 				],
@@ -28781,7 +29457,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[864, 2304, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				327,
 				[
 				],
@@ -29372,7 +30048,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[2240, 1984, 0, 256, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				544,
 				[
 				],
@@ -29392,7 +30068,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[3104, 1696, 0, 256, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				545,
 				[
 				],
@@ -29574,7 +30250,7 @@ cr.getProjectModel = function() { return [
 			[
 				[0, 0, 0, 6400, 3200, 0, 0, 1, 0, 0, 0, 0, [],
 [2000, 2000, "200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x68,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,1800x-1,200x103,3601800x-1"]],
-				31,
+				34,
 				204,
 				[
 				],
@@ -29611,7 +30287,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[448, 672, 0, 32, 32, 0, 0, 1, 0.5, 1, 0, 0, []],
-				28,
+				32,
 				364,
 				[
 					["enter your name"],
@@ -29642,7 +30318,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[1120, 416, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				366,
 				[
 					["Level 01_03"],
@@ -29846,7 +30522,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[2112, 704, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				339,
 				[
 					["Level 01_03"],
@@ -29882,7 +30558,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[2016, 736, 0, 256, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				341,
 				[
 				],
@@ -29918,7 +30594,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[1632, 544, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				343,
 				[
 					["Level 01_03"],
@@ -29954,7 +30630,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[1536, 576, 0, 256, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				345,
 				[
 				],
@@ -30376,7 +31052,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[3392, 384, 0, 256, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				568,
 				[
 				],
@@ -30396,7 +31072,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[416, 1472, 0, 256, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				569,
 				[
 				],
@@ -30535,7 +31211,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[512, 2112, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				575,
 				[
 					["Level 01_03"],
@@ -30571,7 +31247,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[416, 2144, 0, 256, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				577,
 				[
 				],
@@ -31315,7 +31991,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[3936, 2144, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				628,
 				[
 					["Level 01_03"],
@@ -31351,7 +32027,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[3840, 2176, 0, 256, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				630,
 				[
 				],
@@ -31371,7 +32047,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[4896, 2368, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				631,
 				[
 					["Level 01_03"],
@@ -31407,7 +32083,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[4800, 2400, 0, 256, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				633,
 				[
 				],
@@ -31585,7 +32261,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[4320, 3136, 0, 224, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				645,
 				[
 				],
@@ -31605,7 +32281,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[4352, 3104, 0, 192, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				646,
 				[
 					["Level 01_01"],
@@ -32565,7 +33241,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[5920, 864, 0, 256, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				688,
 				[
 				],
@@ -32603,7 +33279,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[512, 1440, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				370,
 				[
 					["Level 01_01"],
@@ -32623,7 +33299,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[768, 352, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				372,
 				[
 					["Overworld"],
@@ -32643,7 +33319,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[736, 384, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				362,
 				[
 				],
@@ -32663,7 +33339,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[1024, 448, 0, 256, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				367,
 				[
 				],
@@ -32735,7 +33411,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[96, 2944, 0, 96, 64, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				588,
 				[
 					["Level 01_03"],
@@ -32755,7 +33431,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[32, 3008, 0, 256, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				590,
 				[
 				],
@@ -32825,7 +33501,7 @@ cr.getProjectModel = function() { return [
 			[
 				[0, 0, 0, 6400, 3200, 0, 0, 1, 0, 0, 0, 0, [],
 [200, 100, "848x71,20,172x71,20,18x71,20,2x71,20,4x71,20,71,20,166x71,20,3x71,20,10x71,20,5x71,20,71,20,71,2x20,4x71,20,71,20,71,20,164x71,20,71,20,71,20,3x71,20,6x71,20,71,20,71,20,71,20,71,20,71,3x20,4x71,2x20,71,20,164x71,4x20,4x71,20,5x71,2x20,71,20,71,20,71,20,71,20,2x71,2x20,5x71,2x20,148x71,12x90,20,6x90,20,5x90,20,90,20,3x90,4x20,2x90,3x20,3x90,20,6x90,20,151x90,20,7x90,20,90,20,6x90,20,5x90,3x20,4x90,20,5x90,20,4x90,20,6x90,20,151x90,20,90,20,5x90,20,90,20,90,20,4x90,20,5x90,2x20,5x90,20,5x90,20,4x90,20,6x90,20,151x90,20,90,20,90,20,4x90,4x20,4x90,20,6x90,20,5x90,20,5x90,20,4x90,20,159x90,4x20,5x90,20,6x90,20,6x90,20,177x90,20,7x90,20,3x90,20,23x90,20,5x90,20,10x90,20,146x90,20,7x90,20,3x90,20,7x90,20,15x90,20,5x90,20,10x90,20,146x90,20,11x90,20,5x90,20,90,20,90,20,12x90,2x20,5x90,20,2x90,20,7x90,20,146x90,20,3x90,52,90,52,4x90,52,20,5x90,20,90,20,90,20,6x90,20,5x90,2x20,5x90,2x20,90,20,5x90,20,90,20,90,20,142x90,52,5x90,52,90,52,4x90,52,20,5x90,20,90,2x20,7x90,20,5x90,3x20,4x90,2x20,90,20,5x90,20,90,3x20,142x90,52,5x90,52,90,52,90,52,2x90,52,20,90,20,3x90,3x20,8x90,20,6x90,2x20,4x90,2x20,90,20,5x90,4x20,143x90,2x52,5x90,3x52,4x90,2x52,6x90,20,8x90,20,6x90,2x20,5x90,3x20,6x90,2x20,143x90,3x52,6x90,52,5x90,52,7x90,20,6x90,20,90,2x20,5x90,20,6x90,20,9x90,20,143x90,2x52,7x90,52,5x90,52,7x90,20,6x90,20,90,2x20,5x90,20,6x90,20,9x90,20,142x90,2x89,52,7x89,52,5x89,52,7x89,20,6x89,20,89,2x20,5x89,20,6x89,20,9x89,20,144x89,52,7x89,52,20x89,3x20,13x89,2x20,8x89,20,175x89,20,13x89,2x20,184x89,20,1166x89,2x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,179x90,4x-1,6x90,11x89,162x90,6x97,11x90,4x-1,6x90,11x89,162x90,6x97,11x90,4x-1,6x90,11x89,158x90,6x97,2x90,6x97,7x90,4x-1,6x90,11x89,158x90,6x97,2x90,6x97,7x90,4x-1,6x90,11x89,154x90,6x97,2x90,6x97,2x90,6x97,3x90,4x-1,6x90,11x89,154x90,6x97,2x90,6x97,2x90,6x97,3x90,4x-1,6x90,11x89,150x90,6x97,2x90,6x97,2x90,6x97,2x90,6x97,3x-1,6x90,11x89,150x90,6x97,2x90,6x97,2x90,6x97,2x90,6x97,60x-1,139x90,202x-1"]],
-				31,
+				34,
 				373,
 				[
 				],
@@ -33294,7 +33970,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[192, 672, 0, 32, 32, 0, 0, 1, 0.5, 1, 0, 0, []],
-				28,
+				32,
 				406,
 				[
 					["enter your name"],
@@ -33325,7 +34001,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[800, 640, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				408,
 				[
 					["Level 01_03"],
@@ -33507,7 +34183,7 @@ cr.getProjectModel = function() { return [
 			[
 			[
 				[352, 832, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				412,
 				[
 					["Level 01_01"],
@@ -33527,7 +34203,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[576, 736, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				413,
 				[
 					["Level 01_02"],
@@ -33547,7 +34223,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[96, 832, 0, 64, 32, 0, 0, 1, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
+				35,
 				414,
 				[
 					["Overworld"],
@@ -33567,7 +34243,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[64, 864, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				404,
 				[
 				],
@@ -33587,7 +34263,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[544, 768, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				405,
 				[
 				],
@@ -33607,7 +34283,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[320, 864, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				407,
 				[
 				],
@@ -33627,7 +34303,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[768, 672, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				409,
 				[
 				],
@@ -33647,7 +34323,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[1536, 608, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				410,
 				[
 				],
@@ -33667,7 +34343,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[2112, 832, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				411,
 				[
 				],
@@ -33737,7 +34413,7 @@ cr.getProjectModel = function() { return [
 			[
 				[0, 0, 0, 1280, 1024, 0, 0, 1, 0, 0, 0, 0, [],
 [40, 32, "2x79,22x60,9x63,5x60,2x0,2x79,21x60,2x63,7x71,4x63,2x60,2x0,2x79,21x60,63,11x71,63,2x60,2x0,2x79,21x60,63,11x71,63,2x60,2x0,2x79,22x60,63,7x71,3x63,3x60,2x0,2x79,23x60,4x63,6x71,63,2x60,2x0,2x79,27x60,6x63,3x60,2x0,2x79,36x60,2x0,2x79,36x60,2x0,2x79,36x60,2x0,2x79,36x60,2x0,2x79,36x60,2x0,2x79,36x60,2x0,2x79,21x60,5x63,10x60,2x0,2x79,20x60,63,5x71,63,9x60,2x0,2x79,21x60,5x63,10x60,2x0,2x79,36x60,2x0,2x79,26x60,5x63,5x60,2x0,2x79,24x60,2x63,5x71,63,4x60,2x0,2x79,23x60,63,7x71,63,4x60,4x0,17x60,17,19,17,2x60,4x63,2x71,63,2x71,63,4x60,4x0,25x60,3x63,60,71,2x63,4x60,4x0,17x60,19,17,19,60,36,7x60,2x71,63,4x60,4x0,5x60,4,4x60,3x4,3x60,36,3x60,17,8x60,63,71,63,2x60,36,5x0,4x60,5x4,60,4,7x60,36,2x60,17,7x60,63,71,63,4x60,4x0,5x60,7x4,7x60,36,10x60,63,5x60,4x0,4x60,3x4,0,2x4,0,2x4,23x60,4x0,4x60,4,2x60,0,2x23,2x60,4,20x60,2x0,60,4x0,8x60,2x23,4x60,39,8x47,39,12x60,4x0,8x60,2x23,3x60,39,9x47,2x39,11x60,82x0"]],
-				31,
+				34,
 				21,
 				[
 				],
@@ -33902,7 +34578,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[128, 832, 0, 32, 32, 0, 0, 1, 0.5, 1, 0, 0, []],
-				28,
+				32,
 				29,
 				[
 					["enter your name"],
@@ -33932,48 +34608,8 @@ cr.getProjectModel = function() { return [
 				]
 			]
 ,			[
-				[320, 832, 0, 64, 32, 0, 0, 0.800000011920929, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
-				28,
-				[
-					["World 01"],
-					[1],
-					[0],
-					[0],
-					[0]
-				],
-				[
-				[
-				]
-				],
-				[
-					0,
-					0
-				]
-			]
-,			[
-				[640, 832, 0, 64, 32, 0, 0, 0.800000011920929, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
-				33,
-				[
-					["World 02"],
-					[2],
-					[0],
-					[0],
-					[0]
-				],
-				[
-				[
-				]
-				],
-				[
-					0,
-					0
-				]
-			]
-,			[
 				[288, 864, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				34,
 				[
 				],
@@ -33993,7 +34629,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[608, 864, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				79,
 				[
 				],
@@ -34109,7 +34745,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[768, 288, 0, 128, 32, 0, 0, 1, 0, 0, 0, 0, []],
-				30,
+				33,
 				162,
 				[
 				],
@@ -34152,26 +34788,6 @@ cr.getProjectModel = function() { return [
 				[
 				[
 					1
-				]
-				],
-				[
-					0,
-					0
-				]
-			]
-,			[
-				[800, 256, 0, 64, 32, 0, 0, 0.800000011920929, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
-				32,
-				160,
-				[
-					["World 03"],
-					[3],
-					[0],
-					[0],
-					[0]
-				],
-				[
-				[
 				]
 				],
 				[
@@ -34329,12 +34945,90 @@ cr.getProjectModel = function() { return [
 					0
 				]
 			]
+,			[
+				[640, 832, 0, 64, 32, 0, 0, 0.800000011920929, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
+				35,
+				33,
+				[
+					["World 02"],
+					[2],
+					[0],
+					[0],
+					[0]
+				],
+				[
+				[
+				]
+				],
+				[
+					0,
+					0
+				]
+			]
+,			[
+				[800, 256, 0, 64, 32, 0, 0, 0.800000011920929, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
+				35,
+				160,
+				[
+					["World 03"],
+					[3],
+					[0],
+					[0],
+					[0]
+				],
+				[
+				[
+				]
+				],
+				[
+					0,
+					0
+				]
+			]
+,			[
+				[320, 832, 0, 64, 32, 0, 0, 0.800000011920929, 0, 0, 0, 0, [[25, 25, 5, 5, 1, 1]]],
+				35,
+				28,
+				[
+					["World 01"],
+					[1],
+					[0],
+					[0],
+					[0]
+				],
+				[
+				[
+				]
+				],
+				[
+					0,
+					0
+				]
+			]
+			],
+			[			]
+		]
+,		[
+			"Foreground",
+			2,
+			9650227892083489,
+			true,
+			[255, 255, 255],
+			true,
+			1,
+			1,
+			1,
+			false,
+			1,
+			0,
+			0,
+			[
 			],
 			[			]
 		]
 ,		[
 			"UI layer",
-			2,
+			3,
 			4404953542770918,
 			true,
 			[255, 255, 255],
@@ -34455,7 +35149,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[278, 83, 0, 150, 22, 0, 0, 1, 0, 0, 0, 0, []],
-				37,
+				38,
 				195,
 				[
 				],
@@ -34498,7 +35192,7 @@ cr.getProjectModel = function() { return [
 			]
 ,			[
 				[509, 86, 0, 200, 30, 0, 0, 1, 0, 0, 0, 0, []],
-				39,
+				40,
 				716,
 				[
 				],
@@ -34535,41 +35229,6 @@ cr.getProjectModel = function() { return [
 			1,
 			"enter your name",
 false,false,2810063145152778,false
-		]
-,		[
-			0,
-			null,
-			false,
-			null,
-			9729546540062487,
-			[
-			[
-				29,
-				cr.plugins_.Keyboard.prototype.cnds.OnKey,
-				null,
-				1,
-				false,
-				false,
-				false,
-				6068781719945028,
-				false
-				,[
-				[
-					9,
-					40
-				]
-				]
-			]
-			],
-			[
-			[
-				28,
-				cr.behaviors.Platform.prototype.acts.FallThrough,
-				"Platform",
-				5003088968771055,
-				false
-			]
-			]
 		]
 ,		[
 			0,
@@ -34612,10 +35271,34 @@ false,false,2810063145152778,false
 				]
 				]
 			]
+,			[
+				31,
+				cr.plugins_.gamepad.prototype.cnds.OnButtonDown,
+				null,
+				0,
+				false,
+				false,
+				false,
+				5027584348133373,
+				false
+				,[
+				[
+					0,
+					[
+						0,
+						0
+					]
+				]
+,				[
+					3,
+					0
+				]
+				]
+			]
 			],
 			[
 			[
-				28,
+				32,
 				cr.behaviors.Platform.prototype.acts.SimulateControl,
 				"Platform",
 				8774133743622671,
@@ -34634,37 +35317,211 @@ false,false,2810063145152778,false
 			null,
 			false,
 			null,
-			1183381423882173,
+			9984350508171308,
 			[
 			[
-				29,
-				cr.plugins_.Keyboard.prototype.cnds.IsKeyDown,
-				null,
+				32,
+				cr.behaviors.Platform.prototype.cnds.IsOnFloor,
+				"Platform",
 				0,
 				false,
+				true,
 				false,
-				false,
-				3665953415519334,
+				6738109013144875,
 				false
-				,[
-				[
-					9,
-					65
-				]
-				]
 			]
 			],
 			[
+			]
+			,[
 			[
-				28,
-				cr.behaviors.Platform.prototype.acts.SimulateControl,
-				"Platform",
-				4649481119524783,
-				false
+				0,
+				null,
+				true,
+				null,
+				9572255671015298,
+				[
+				[
+					29,
+					cr.plugins_.Keyboard.prototype.cnds.IsKeyDown,
+					null,
+					0,
+					false,
+					false,
+					false,
+					4058542099085883,
+					false
+					,[
+					[
+						9,
+						87
+					]
+					]
+				]
+,				[
+					29,
+					cr.plugins_.Keyboard.prototype.cnds.IsKeyDown,
+					null,
+					0,
+					false,
+					false,
+					false,
+					4536821558951728,
+					false
+					,[
+					[
+						9,
+						32
+					]
+					]
+				]
+,				[
+					31,
+					cr.plugins_.gamepad.prototype.cnds.OnButtonDown,
+					null,
+					0,
+					false,
+					false,
+					false,
+					4566651838839994,
+					false
+					,[
+					[
+						0,
+						[
+							0,
+							0
+						]
+					]
+,					[
+						3,
+						0
+					]
+					]
+				]
+				],
+				[
+				]
 				,[
 				[
-					3,
-					0
+					0,
+					null,
+					false,
+					null,
+					3223170969973238,
+					[
+					[
+						32,
+						cr.behaviors.Platform.prototype.cnds.IsByWall,
+						"Platform",
+						0,
+						false,
+						false,
+						false,
+						5954668762661898,
+						false
+						,[
+						[
+							3,
+							0
+						]
+						]
+					]
+					],
+					[
+					[
+						32,
+						cr.behaviors.Platform.prototype.acts.SetVectorY,
+						"Platform",
+						1926171237725463,
+						false
+						,[
+						[
+							0,
+							[
+								0,
+								-500
+							]
+						]
+						]
+					]
+,					[
+						32,
+						cr.behaviors.Platform.prototype.acts.SetVectorX,
+						"Platform",
+						2076509075614152,
+						false
+						,[
+						[
+							0,
+							[
+								0,
+								400
+							]
+						]
+						]
+					]
+					]
+				]
+,				[
+					0,
+					null,
+					false,
+					null,
+					5816244348179941,
+					[
+					[
+						32,
+						cr.behaviors.Platform.prototype.cnds.IsByWall,
+						"Platform",
+						0,
+						false,
+						false,
+						false,
+						8697754236833333,
+						false
+						,[
+						[
+							3,
+							1
+						]
+						]
+					]
+					],
+					[
+					[
+						32,
+						cr.behaviors.Platform.prototype.acts.SetVectorY,
+						"Platform",
+						6063866880098351,
+						false
+						,[
+						[
+							0,
+							[
+								0,
+								-500
+							]
+						]
+						]
+					]
+,					[
+						32,
+						cr.behaviors.Platform.prototype.acts.SetVectorX,
+						"Platform",
+						2290572751436825,
+						false
+						,[
+						[
+							0,
+							[
+								0,
+								-400
+							]
+						]
+						]
+					]
+					]
 				]
 				]
 			]
@@ -34673,7 +35530,7 @@ false,false,2810063145152778,false
 ,		[
 			0,
 			null,
-			false,
+			true,
 			null,
 			3653060779099618,
 			[
@@ -34694,55 +35551,66 @@ false,false,2810063145152778,false
 				]
 				]
 			]
-			],
-			[
-			[
-				28,
-				cr.behaviors.Platform.prototype.acts.FallThrough,
-				"Platform",
-				3187312122008111,
-				false
-			]
-			]
-		]
-,		[
-			0,
-			null,
-			false,
-			null,
-			4935148242387575,
-			[
-			[
-				29,
-				cr.plugins_.Keyboard.prototype.cnds.IsKeyDown,
+,			[
+				31,
+				cr.plugins_.gamepad.prototype.cnds.CompareAxis,
 				null,
 				0,
 				false,
 				false,
 				false,
-				8915286956838546,
+				495769823249959,
+				false
+				,[
+				[
+					0,
+					[
+						0,
+						0
+					]
+				]
+,				[
+					3,
+					1
+				]
+,				[
+					8,
+					4
+				]
+,				[
+					0,
+					[
+						0,
+						25
+					]
+				]
+				]
+			]
+,			[
+				29,
+				cr.plugins_.Keyboard.prototype.cnds.OnKey,
+				null,
+				1,
+				false,
+				false,
+				false,
+				6617163543018814,
 				false
 				,[
 				[
 					9,
-					68
+					40
 				]
 				]
 			]
 			],
 			[
 			[
-				28,
-				cr.behaviors.Platform.prototype.acts.SimulateControl,
+				32,
+				cr.behaviors.Platform.prototype.acts.FallThrough,
 				"Platform",
-				3903900064081588,
+				3187312122008111,
 				false
-				,[
-				[
-					3,
-					1
-				]
-				]
 			]
 			]
 		]
@@ -34787,10 +35655,45 @@ false,false,2810063145152778,false
 				]
 				]
 			]
+,			[
+				31,
+				cr.plugins_.gamepad.prototype.cnds.CompareAxis,
+				null,
+				0,
+				false,
+				false,
+				false,
+				6638883017095563,
+				false
+				,[
+				[
+					0,
+					[
+						0,
+						0
+					]
+				]
+,				[
+					3,
+					0
+				]
+,				[
+					8,
+					2
+				]
+,				[
+					0,
+					[
+						0,
+						-25
+					]
+				]
+				]
+			]
 			],
 			[
 			[
-				28,
+				32,
 				cr.plugins_.Sprite.prototype.acts.SetMirrored,
 				null,
 				1185657512491565,
@@ -34845,13 +35748,200 @@ false,false,2810063145152778,false
 				]
 				]
 			]
+,			[
+				31,
+				cr.plugins_.gamepad.prototype.cnds.CompareAxis,
+				null,
+				0,
+				false,
+				false,
+				false,
+				4095162081651755,
+				false
+				,[
+				[
+					0,
+					[
+						0,
+						0
+					]
+				]
+,				[
+					3,
+					0
+				]
+,				[
+					8,
+					4
+				]
+,				[
+					0,
+					[
+						0,
+						0
+					]
+				]
+				]
+			]
 			],
 			[
 			[
-				28,
+				32,
 				cr.plugins_.Sprite.prototype.acts.SetMirrored,
 				null,
 				7635993642663713,
+				false
+				,[
+				[
+					3,
+					1
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			true,
+			null,
+			1183381423882173,
+			[
+			[
+				29,
+				cr.plugins_.Keyboard.prototype.cnds.IsKeyDown,
+				null,
+				0,
+				false,
+				false,
+				false,
+				3665953415519334,
+				false
+				,[
+				[
+					9,
+					65
+				]
+				]
+			]
+,			[
+				31,
+				cr.plugins_.gamepad.prototype.cnds.CompareAxis,
+				null,
+				0,
+				false,
+				false,
+				false,
+				3772233603479164,
+				false
+				,[
+				[
+					0,
+					[
+						0,
+						0
+					]
+				]
+,				[
+					3,
+					0
+				]
+,				[
+					8,
+					2
+				]
+,				[
+					0,
+					[
+						0,
+						-25
+					]
+				]
+				]
+			]
+			],
+			[
+			[
+				32,
+				cr.behaviors.Platform.prototype.acts.SimulateControl,
+				"Platform",
+				4649481119524783,
+				false
+				,[
+				[
+					3,
+					0
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			true,
+			null,
+			4935148242387575,
+			[
+			[
+				29,
+				cr.plugins_.Keyboard.prototype.cnds.IsKeyDown,
+				null,
+				0,
+				false,
+				false,
+				false,
+				8915286956838546,
+				false
+				,[
+				[
+					9,
+					68
+				]
+				]
+			]
+,			[
+				31,
+				cr.plugins_.gamepad.prototype.cnds.CompareAxis,
+				null,
+				0,
+				false,
+				false,
+				false,
+				1681987848177349,
+				false
+				,[
+				[
+					0,
+					[
+						0,
+						0
+					]
+				]
+,				[
+					3,
+					0
+				]
+,				[
+					8,
+					4
+				]
+,				[
+					0,
+					[
+						0,
+						25
+					]
+				]
+				]
+			]
+			],
+			[
+			[
+				32,
+				cr.behaviors.Platform.prototype.acts.SimulateControl,
+				"Platform",
+				3903900064081588,
 				false
 				,[
 				[
@@ -34870,7 +35960,7 @@ false,false,2810063145152778,false
 			20881701117599,
 			[
 			[
-				28,
+				32,
 				cr.plugins_.Sprite.prototype.cnds.CompareY,
 				null,
 				0,
@@ -34912,7 +36002,7 @@ false,false,2810063145152778,false
 			2440445632137941,
 			[
 			[
-				28,
+				32,
 				cr.plugins_.Sprite.prototype.cnds.OnCreated,
 				null,
 				1,
@@ -34953,7 +36043,7 @@ false,false,2810063145152778,false
 			],
 			[
 			[
-				28,
+				32,
 				cr.plugins_.Sprite.prototype.acts.Spawn,
 				null,
 				9451137255819654,
@@ -34961,7 +36051,7 @@ false,false,2810063145152778,false
 				,[
 				[
 					4,
-					37
+					38
 				]
 ,				[
 					5,
@@ -34980,7 +36070,7 @@ false,false,2810063145152778,false
 				]
 			]
 ,			[
-				37,
+				38,
 				cr.plugins_.TextBox.prototype.acts.SetText,
 				null,
 				6846316385809746,
@@ -34996,7 +36086,7 @@ false,false,2810063145152778,false
 				]
 			]
 ,			[
-				37,
+				38,
 				cr.behaviors.Pin.prototype.acts.Pin,
 				"Pin",
 				8444556322194842,
@@ -35004,7 +36094,7 @@ false,false,2810063145152778,false
 				,[
 				[
 					4,
-					28
+					32
 				]
 ,				[
 					3,
@@ -35055,7 +36145,7 @@ false,false,2810063145152778,false
 					7,
 					[
 						20,
-						37,
+						38,
 						cr.plugins_.TextBox.prototype.exps.Text,
 						true,
 						null
@@ -35064,7 +36154,7 @@ false,false,2810063145152778,false
 				]
 			]
 ,			[
-				37,
+				38,
 				cr.plugins_.TextBox.prototype.acts.Destroy,
 				null,
 				388897482083702,
@@ -35111,7 +36201,7 @@ false,false,2810063145152778,false
 				1429324398920018,
 				[
 				[
-					28,
+					32,
 					cr.plugins_.Sprite.prototype.cnds.OnCollision,
 					null,
 					0,
@@ -35129,18 +36219,60 @@ false,false,2810063145152778,false
 				]
 				],
 				[
+				]
+			]
+,			[
+				0,
+				null,
+				false,
+				null,
+				1553722041974297,
 				[
-					28,
+				[
+					32,
+					cr.plugins_.Sprite.prototype.cnds.IsOverlappingOffset,
+					null,
+					0,
+					false,
+					false,
+					false,
+					7020012055934374,
+					false
+					,[
+					[
+						4,
+						16
+					]
+,					[
+						0,
+						[
+							0,
+							0
+						]
+					]
+,					[
+						0,
+						[
+							0,
+							5
+						]
+					]
+					]
+				]
+				],
+				[
+				[
+					32,
 					cr.behaviors.Platform.prototype.acts.SetDeceleration,
 					"Platform",
-					7448653303320657,
+					896951743933375,
 					false
 					,[
 					[
 						0,
 						[
 							0,
-							1500
+							15
 						]
 					]
 					]
@@ -35152,39 +36284,33 @@ false,false,2810063145152778,false
 				null,
 				false,
 				null,
-				1553722041974297,
+				8330998467020651,
 				[
 				[
-					28,
-					cr.plugins_.Sprite.prototype.cnds.OnCollision,
+					-1,
+					cr.system_object.prototype.cnds.Else,
 					null,
 					0,
 					false,
 					false,
-					true,
-					7020012055934374,
+					false,
+					2128488504925835,
 					false
-					,[
-					[
-						4,
-						16
-					]
-					]
 				]
 				],
 				[
 				[
-					28,
+					32,
 					cr.behaviors.Platform.prototype.acts.SetDeceleration,
 					"Platform",
-					896951743933375,
+					1252010012136077,
 					false
 					,[
 					[
 						0,
 						[
 							0,
-							15
+							1500
 						]
 					]
 					]
@@ -35220,7 +36346,7 @@ false,false,7276972230536086,false
 			3118673279093746,
 			[
 			[
-				28,
+				32,
 				cr.plugins_.Sprite.prototype.cnds.OnCollision,
 				null,
 				0,
@@ -35232,14 +36358,14 @@ false,false,7276972230536086,false
 				,[
 				[
 					4,
-					32
+					35
 				]
 				]
 			]
 			],
 			[
 			[
-				32,
+				35,
 				cr.behaviors.Timer.prototype.acts.StartTimer,
 				"Timer",
 				6471862983474061,
@@ -35266,7 +36392,7 @@ false,false,7276972230536086,false
 				]
 			]
 ,			[
-				32,
+				35,
 				cr.plugins_.TiledBg.prototype.acts.SetEffectEnabled,
 				null,
 				4630788331288847,
@@ -35295,7 +36421,7 @@ false,false,7276972230536086,false
 			9981327944246466,
 			[
 			[
-				28,
+				32,
 				cr.plugins_.Sprite.prototype.cnds.IsOverlapping,
 				null,
 				0,
@@ -35307,14 +36433,14 @@ false,false,7276972230536086,false
 				,[
 				[
 					4,
-					32
+					35
 				]
 				]
 			]
 			],
 			[
 			[
-				32,
+				35,
 				cr.behaviors.Timer.prototype.acts.StopTimer,
 				"Timer",
 				697033147888607,
@@ -35330,7 +36456,7 @@ false,false,7276972230536086,false
 				]
 			]
 ,			[
-				32,
+				35,
 				cr.plugins_.TiledBg.prototype.acts.SetEffectEnabled,
 				null,
 				5982107905080349,
@@ -35359,7 +36485,7 @@ false,false,7276972230536086,false
 			2344294691575559,
 			[
 			[
-				32,
+				35,
 				cr.behaviors.Timer.prototype.cnds.OnTimer,
 				"Timer",
 				0,
@@ -35391,7 +36517,7 @@ false,false,7276972230536086,false
 					1,
 					[
 						21,
-						32,
+						35,
 						true,
 						null
 						,0
@@ -35414,7 +36540,7 @@ false,false,7276972230536086,false
 					7,
 					[
 						21,
-						32,
+						35,
 						false,
 						null
 						,2
@@ -35437,7 +36563,7 @@ false,false,7276972230536086,false
 					7,
 					[
 						21,
-						32,
+						35,
 						false,
 						null
 						,1
@@ -35460,7 +36586,7 @@ false,false,7276972230536086,false
 					7,
 					[
 						21,
-						32,
+						35,
 						false,
 						null
 						,3
@@ -35483,7 +36609,7 @@ false,false,7276972230536086,false
 					7,
 					[
 						21,
-						32,
+						35,
 						false,
 						null
 						,4
@@ -35546,7 +36672,7 @@ false,false,8192329076575403,false
 				]
 			]
 ,			[
-				33,
+				36,
 				cr.plugins_.Text.prototype.acts.SetText,
 				null,
 				2507489428283696,
@@ -35639,7 +36765,7 @@ false,false,8192329076575403,false
 			418483670986599,
 			[
 			[
-				28,
+				32,
 				cr.plugins_.Sprite.prototype.cnds.OnCreated,
 				null,
 				1,
@@ -35713,7 +36839,7 @@ false,false,3972817130284634,false
 			8216681721535658,
 			[
 			[
-				28,
+				32,
 				cr.plugins_.Sprite.prototype.cnds.IsOutsideLayout,
 				null,
 				0,
@@ -35787,7 +36913,7 @@ false,false,8213204831356256,false
 			[
 				0,
 				null,
-				false,
+				true,
 				null,
 				4799766731672726,
 				[
@@ -35805,6 +36931,30 @@ false,false,8213204831356256,false
 					[
 						9,
 						80
+					]
+					]
+				]
+,				[
+					31,
+					cr.plugins_.gamepad.prototype.cnds.OnButtonDown,
+					null,
+					0,
+					false,
+					false,
+					false,
+					9415173152110897,
+					false
+					,[
+					[
+						0,
+						[
+							0,
+							0
+						]
+					]
+,					[
+						3,
+						9
 					]
 					]
 				]
@@ -35964,7 +37114,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetOpacity,
 						null,
 						5564864266790713,
@@ -35980,7 +37130,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						5198859656528597,
@@ -36000,7 +37150,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						8532798613848453,
@@ -36020,7 +37170,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						4205817132125938,
@@ -36040,7 +37190,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						3160025465695836,
@@ -36060,7 +37210,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						6656596310885233,
@@ -36119,7 +37269,7 @@ false,false,8213204831356256,false
 					,[
 					[
 						4,
-						40
+						41
 					]
 ,					[
 						5,
@@ -36165,7 +37315,7 @@ false,false,8213204831356256,false
 					]
 				]
 ,				[
-					40,
+					41,
 					cr.plugins_.Sprite.prototype.acts.SetOpacity,
 					null,
 					8575939758087167,
@@ -36206,7 +37356,7 @@ false,false,8213204831356256,false
 				4720847460834868,
 				[
 				[
-					35,
+					30,
 					cr.plugins_.Mouse.prototype.cnds.OnObjectClicked,
 					null,
 					1,
@@ -36268,7 +37418,7 @@ false,false,8213204831356256,false
 					],
 					[
 					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						8850952143266159,
@@ -36288,7 +37438,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						2449189630381566,
@@ -36308,7 +37458,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						7615900476255838,
@@ -36328,7 +37478,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						1585046118546129,
@@ -36348,7 +37498,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						8803089128721156,
@@ -36423,7 +37573,7 @@ false,false,8213204831356256,false
 					],
 					[
 					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						9379124048018728,
@@ -36443,7 +37593,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						2258215698418098,
@@ -36463,7 +37613,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						2126768684919626,
@@ -36483,7 +37633,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						9454293588143391,
@@ -36503,7 +37653,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						5903680165802399,
@@ -36578,7 +37728,7 @@ false,false,8213204831356256,false
 					],
 					[
 					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						9765030060709217,
@@ -36598,7 +37748,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						1142572037671992,
@@ -36618,7 +37768,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						6225264507386519,
@@ -36638,7 +37788,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						4661817014538213,
@@ -36658,7 +37808,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						9779809748280985,
@@ -36769,7 +37919,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetOpacity,
 						null,
 						215930189804362,
@@ -36785,7 +37935,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						9043079368846531,
@@ -36805,7 +37955,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						7399109677735407,
@@ -36825,7 +37975,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						9599951783779973,
@@ -36845,7 +37995,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						1113113251690721,
@@ -36865,7 +38015,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						6723441325443454,
@@ -36979,7 +38129,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetOpacity,
 						null,
 						4108777983621222,
@@ -36995,7 +38145,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						4219664272196596,
@@ -37015,7 +38165,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						8465695623402161,
@@ -37035,7 +38185,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						158959762090633,
@@ -37055,7 +38205,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						1330344364084469,
@@ -37075,7 +38225,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						5717755209632938,
@@ -37202,7 +38352,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetOpacity,
 						null,
 						4115714275137109,
@@ -37218,7 +38368,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						4227760501341097,
@@ -37238,7 +38388,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						8279862137862644,
@@ -37258,7 +38408,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						8983099089008585,
@@ -37278,7 +38428,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						5244783644979314,
@@ -37298,7 +38448,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						40,
+						41,
 						cr.plugins_.Sprite.prototype.acts.SetInstanceVar,
 						null,
 						7313205564583748,
@@ -37442,7 +38592,7 @@ false,false,8213204831356256,false
 					false
 				]
 ,				[
-					40,
+					41,
 					cr.plugins_.Sprite.prototype.acts.SetOpacity,
 					null,
 					8590945339850049,
@@ -37458,7 +38608,7 @@ false,false,8213204831356256,false
 					]
 				]
 ,				[
-					40,
+					41,
 					cr.plugins_.Sprite.prototype.acts.Spawn,
 					null,
 					9858616736956056,
@@ -37495,7 +38645,7 @@ false,false,8213204831356256,false
 						7,
 						[
 							21,
-							40,
+							41,
 							true,
 							null
 							,0
@@ -37504,7 +38654,7 @@ false,false,8213204831356256,false
 					]
 				]
 ,				[
-					40,
+					41,
 					cr.plugins_.Sprite.prototype.acts.Spawn,
 					null,
 					9790980225301504,
@@ -37541,7 +38691,7 @@ false,false,8213204831356256,false
 						7,
 						[
 							21,
-							40,
+							41,
 							true,
 							null
 							,1
@@ -37550,7 +38700,7 @@ false,false,8213204831356256,false
 					]
 				]
 ,				[
-					40,
+					41,
 					cr.plugins_.Sprite.prototype.acts.Spawn,
 					null,
 					6943649453093475,
@@ -37587,7 +38737,7 @@ false,false,8213204831356256,false
 						7,
 						[
 							21,
-							40,
+							41,
 							true,
 							null
 							,2
@@ -37596,7 +38746,7 @@ false,false,8213204831356256,false
 					]
 				]
 ,				[
-					40,
+					41,
 					cr.plugins_.Sprite.prototype.acts.Spawn,
 					null,
 					9132460347093546,
@@ -37633,7 +38783,7 @@ false,false,8213204831356256,false
 						7,
 						[
 							21,
-							40,
+							41,
 							true,
 							null
 							,3
@@ -37642,7 +38792,7 @@ false,false,8213204831356256,false
 					]
 				]
 ,				[
-					40,
+					41,
 					cr.plugins_.Sprite.prototype.acts.Spawn,
 					null,
 					8189243570912368,
@@ -37679,7 +38829,7 @@ false,false,8213204831356256,false
 						7,
 						[
 							21,
-							40,
+							41,
 							true,
 							null
 							,4
@@ -37750,7 +38900,7 @@ false,false,8213204831356256,false
 				6163608069335742,
 				[
 				[
-					28,
+					32,
 					cr.plugins_.Sprite.prototype.cnds.OnCollision,
 					null,
 					0,
@@ -37762,14 +38912,14 @@ false,false,8213204831356256,false
 					,[
 					[
 						4,
-						34
+						37
 					]
 					]
 				]
 				],
 				[
 				[
-					34,
+					37,
 					cr.behaviors.Timer.prototype.acts.StartTimer,
 					"Timer",
 					6746784026839098,
@@ -37779,7 +38929,7 @@ false,false,8213204831356256,false
 						0,
 						[
 							1,
-							1.5
+							0.5
 						]
 					]
 ,					[
@@ -37796,7 +38946,7 @@ false,false,8213204831356256,false
 					]
 				]
 ,				[
-					34,
+					37,
 					cr.plugins_.TiledBg.prototype.acts.SetEffectEnabled,
 					null,
 					7052617245950649,
@@ -37825,7 +38975,7 @@ false,false,8213204831356256,false
 				4053645422990758,
 				[
 				[
-					28,
+					32,
 					cr.plugins_.Sprite.prototype.cnds.IsOverlapping,
 					null,
 					0,
@@ -37837,14 +38987,14 @@ false,false,8213204831356256,false
 					,[
 					[
 						4,
-						34
+						37
 					]
 					]
 				]
 				],
 				[
 				[
-					34,
+					37,
 					cr.behaviors.Timer.prototype.acts.StopTimer,
 					"Timer",
 					1488393583518513,
@@ -37860,7 +39010,7 @@ false,false,8213204831356256,false
 					]
 				]
 ,				[
-					34,
+					37,
 					cr.plugins_.TiledBg.prototype.acts.SetEffectEnabled,
 					null,
 					6708266848345588,
@@ -37889,7 +39039,7 @@ false,false,8213204831356256,false
 				8023423889860125,
 				[
 				[
-					34,
+					37,
 					cr.behaviors.Timer.prototype.cnds.OnTimer,
 					"Timer",
 					0,
@@ -37911,7 +39061,7 @@ false,false,8213204831356256,false
 				],
 				[
 				[
-					34,
+					37,
 					cr.plugins_.TiledBg.prototype.acts.SetInstanceVar,
 					null,
 					4289318904658379,
@@ -37951,7 +39101,7 @@ false,false,8213204831356256,false
 					]
 				]
 ,				[
-					34,
+					37,
 					cr.plugins_.TiledBg.prototype.acts.SetInstanceVar,
 					null,
 					5343534042124159,
@@ -37969,14 +39119,14 @@ false,false,8213204831356256,false
 							,[
 [
 								21,
-								34,
+								37,
 								false,
 								null
 								,1
 							]
 ,[
 								21,
-								34,
+								37,
 								false,
 								null
 								,2
@@ -38021,7 +39171,7 @@ false,false,8213204831356256,false
 					]
 				]
 ,				[
-					36,
+					28,
 					cr.plugins_.AJAX.prototype.acts.Post,
 					null,
 					5329600835684464,
@@ -38076,7 +39226,7 @@ false,false,8213204831356256,false
 									]
 									,[
 										21,
-										34,
+										37,
 										false,
 										null
 										,2
@@ -38110,7 +39260,7 @@ false,false,8213204831356256,false
 					]
 				]
 ,				[
-					38,
+					39,
 					cr.plugins_.WebStorage.prototype.acts.StoreLocal,
 					null,
 					6167832580854387,
@@ -38175,7 +39325,7 @@ false,false,8213204831356256,false
 				1991185108741167,
 				[
 				[
-					36,
+					28,
 					cr.plugins_.AJAX.prototype.cnds.OnComplete,
 					null,
 					1,
@@ -38197,7 +39347,7 @@ false,false,8213204831356256,false
 				],
 				[
 				[
-					36,
+					28,
 					cr.plugins_.AJAX.prototype.acts.Request,
 					null,
 					696571004388865,
@@ -38250,7 +39400,7 @@ false,false,8213204831356256,false
 				8477313202443505,
 				[
 				[
-					36,
+					28,
 					cr.plugins_.AJAX.prototype.cnds.OnComplete,
 					null,
 					1,
@@ -38272,7 +39422,7 @@ false,false,8213204831356256,false
 				],
 				[
 				[
-					28,
+					32,
 					cr.plugins_.Sprite.prototype.acts.SetScale,
 					null,
 					1107177054753126,
@@ -38318,7 +39468,7 @@ false,false,8213204831356256,false
 						0,
 						[
 							0,
-							15
+							5
 						]
 					]
 					]
@@ -38348,7 +39498,7 @@ false,false,8213204831356256,false
 						1,
 						[
 							21,
-							34,
+							37,
 							true,
 							null
 							,0
@@ -38424,7 +39574,7 @@ false,false,8213204831356256,false
 					],
 					[
 					[
-						28,
+						32,
 						cr.plugins_.Sprite.prototype.acts.SetX,
 						null,
 						3780077526340621,
@@ -38440,7 +39590,7 @@ false,false,8213204831356256,false
 						]
 					]
 ,					[
-						28,
+						32,
 						cr.plugins_.Sprite.prototype.acts.SetY,
 						null,
 						597434835376906,
@@ -38562,7 +39712,7 @@ false,false,8213204831356256,false
 								,[
 [
 									20,
-									36,
+									28,
 									cr.plugins_.AJAX.prototype.exps.LastData,
 									true,
 									null
@@ -38616,7 +39766,7 @@ false,false,8213204831356256,false
 								,[
 [
 									20,
-									36,
+									28,
 									cr.plugins_.AJAX.prototype.exps.LastData,
 									true,
 									null
@@ -39320,7 +40470,7 @@ false,false,8213204831356256,false
 							7,
 							[
 								21,
-								34,
+								37,
 								false,
 								null
 								,2
@@ -39360,7 +40510,7 @@ false,false,8213204831356256,false
 					0,
 					[
 						20,
-						28,
+						32,
 						cr.plugins_.Sprite.prototype.exps.X,
 						false,
 						null
@@ -39370,7 +40520,7 @@ false,false,8213204831356256,false
 					0,
 					[
 						20,
-						28,
+						32,
 						cr.plugins_.Sprite.prototype.exps.Y,
 						false,
 						null
@@ -39379,7 +40529,7 @@ false,false,8213204831356256,false
 				]
 			]
 ,			[
-				28,
+				32,
 				cr.plugins_.Sprite.prototype.cnds.CompareX,
 				null,
 				0,
@@ -39413,7 +40563,7 @@ false,false,8213204831356256,false
 				]
 			]
 ,			[
-				28,
+				32,
 				cr.plugins_.Sprite.prototype.cnds.CompareX,
 				null,
 				0,
@@ -39484,13 +40634,13 @@ false,false,8213204831356256,false
 				,[
 				[
 					4,
-					39
+					40
 				]
 ,				[
 					5,
 					[
-						0,
-						1
+						2,
+						"Foreground"
 					]
 				]
 ,				[
@@ -39503,7 +40653,7 @@ false,false,8213204831356256,false
 				]
 			]
 ,			[
-				39,
+				40,
 				cr.plugins_.Text.prototype.acts.SetText,
 				null,
 				6659792940356135,
@@ -39522,7 +40672,7 @@ false,false,8213204831356256,false
 				]
 			]
 ,			[
-				39,
+				40,
 				cr.plugins_.Text.prototype.acts.SetVisible,
 				null,
 				9434440865017565,
@@ -39557,7 +40707,7 @@ false,false,8213204831356256,false
 			],
 			[
 			[
-				39,
+				40,
 				cr.plugins_.Text.prototype.acts.Destroy,
 				null,
 				9923261084696262,
@@ -39585,7 +40735,7 @@ false,false,8213204831356256,false
 			1494202342457822,
 			[
 			[
-				28,
+				32,
 				cr.plugins_.Sprite.prototype.cnds.OnCollision,
 				null,
 				0,
@@ -39660,7 +40810,7 @@ false,false,8350547247626701,false
 			5754962425771619,
 			[
 			[
-				28,
+				32,
 				cr.plugins_.Sprite.prototype.cnds.OnCreated,
 				null,
 				1,
@@ -39740,7 +40890,7 @@ false,false,8350547247626701,false
 				],
 				[
 				[
-					28,
+					32,
 					cr.plugins_.Sprite.prototype.acts.SetX,
 					null,
 					2782903701575992,
@@ -39756,7 +40906,7 @@ false,false,8350547247626701,false
 					]
 				]
 ,				[
-					28,
+					32,
 					cr.plugins_.Sprite.prototype.acts.SetY,
 					null,
 					9041704333783997,
@@ -39867,7 +41017,7 @@ false,false,8350547247626701,false
 					2240480075506645,
 					[
 					[
-						38,
+						39,
 						cr.plugins_.WebStorage.prototype.cnds.CompareKeyNumber,
 						null,
 						0,
@@ -39930,7 +41080,7 @@ false,false,8350547247626701,false
 	false,
 	0,
 	0,
-	717,
+	724,
 	false,
 	true,
 	1,
